@@ -1,0 +1,55 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__sequential-thinking__*",
+      "Bash(npx tsx .claude/skills/*/scripts/*.ts)",
+
+      "Bash(yarn lint:*)",
+      "Bash(yarn eslint:*)",
+      "Bash(yarn build:*)",
+
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git pr edit:*)",
+      "Bash(git pr create:*)",
+      "Bash(git pr view:*)",
+      "Bash(git pr list:*)",
+      "Bash(git pr comment:*)",
+      "Bash(git pr review:*)",
+
+      "Bash(grep *)",
+
+      "WebFetch(domain:docs.anthropic.com)"
+    ],
+    "deny": [
+      "Bash(cat ./.env)",
+      "Read(./.env)",
+      "Bash(* drizzle-kit *)"
+    ],
+    "ask": [
+      "Bash(rm)"
+    ],
+    "defaultMode": "plan",
+    "disableBypassPermissionsMode": "disable"
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/statusline.sh"
+  },
+  "enabledPlugins": {
+    "code-simplifier@claude-plugins-official": true,
+    "mgrep@Mixedbread-Grep": false,
+    "hookify@claude-plugins-official": false
+  },
+  "alwaysThinkingEnabled": true,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
+}
