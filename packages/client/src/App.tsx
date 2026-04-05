@@ -1,37 +1,66 @@
-import { useTRPC } from "./lib/trpc";
-import { useQuery } from "@tanstack/react-query";
+import { Button } from "./components/ui/button";
+import { useMonthPicker } from "./hooks/useMonthPicker";
+import { ImportPanel } from "./components/ImportPanel";
+import { UserManager } from "./components/UserManager";
+import { CategoryManager } from "./components/CategoryManager";
+import { LineItemsTable } from "./components/LineItemsTable";
+import { AddLineItem } from "./components/AddLineItem";
 
 export function App() {
-  const trpc = useTRPC();
-  const usersQuery = useQuery(trpc.users.list.queryOptions());
+  const { month, year, label, prev, next } = useMonthPicker();
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-4xl">
-        <h1 className="text-3xl font-bold text-gray-900">Finance Tracker</h1>
-        <p className="mt-2 text-gray-600">
-          Household finance tracking and splitting
-        </p>
+    <div className="min-h-screen bg-background">
+      {/* Top bar */}
+      <header className="border-b bg-card px-6 py-3">
+        <div className="mx-auto max-w-7xl flex items-center justify-between">
+          <h1 className="text-lg font-bold text-foreground">
+            Finance Tracker
+          </h1>
 
-        <div className="mt-8 rounded-lg border bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-800">Users</h2>
-          {usersQuery.isLoading && (
-            <p className="mt-2 text-gray-500">Loading...</p>
-          )}
-          {usersQuery.data && usersQuery.data.length === 0 && (
-            <p className="mt-2 text-gray-500">
-              No users yet. Add one to get started.
-            </p>
-          )}
-          {usersQuery.data && usersQuery.data.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {usersQuery.data.map((user) => (
-                <li key={user.id} className="text-gray-700">
-                  {user.name}
-                </li>
-              ))}
-            </ul>
-          )}
+          {/* Month picker */}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={prev}
+              className="h-7 px-2"
+            >
+              &larr;
+            </Button>
+            <span className="text-sm font-medium w-[140px] text-center">
+              {label}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={next}
+              className="h-7 px-2"
+            >
+              &rarr;
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <AddLineItem month={month} year={year} />
+          </div>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <div className="mx-auto max-w-7xl px-6 py-4">
+        <div className="flex gap-4">
+          {/* Sidebar */}
+          <aside className="w-[280px] shrink-0 space-y-4">
+            <UserManager />
+            <ImportPanel month={month} year={year} />
+            <CategoryManager />
+          </aside>
+
+          {/* Main area */}
+          <main className="flex-1 min-w-0">
+            <LineItemsTable month={month} year={year} />
+          </main>
         </div>
       </div>
     </div>
