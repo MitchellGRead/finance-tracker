@@ -1,8 +1,14 @@
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { lineItems, categories } from "../db/schema";
+import {
+  lineItems,
+  categories,
+  statements,
+  categoryRules,
+  acceptRejectRules,
+} from "../db/schema";
 import { GLOBAL_DEFAULT_SPLIT_RATIO } from "@finance-tracker/shared";
 
 export const lineItemsRouter = router({
@@ -53,6 +59,21 @@ export const lineItemsRouter = router({
       });
     }),
 
+  countByMonth: publicProcedure
+    .input(z.object({ year: z.number() }))
+    .query(async ({ input }) => {
+      const allItems = db.select({ date: lineItems.date }).from(lineItems).all();
+      const counts: Record<number, number> = {};
+      const prefix = String(input.year);
+      for (const item of allItems) {
+        if (item.date.startsWith(prefix)) {
+          const month = parseInt(item.date.substring(5, 7));
+          counts[month] = (counts[month] ?? 0) + 1;
+        }
+      }
+      return counts;
+    }),
+
   update: publicProcedure
     .input(
       z.object({
@@ -90,6 +111,120 @@ export const lineItemsRouter = router({
           .run();
       }
       return { updated: input.ids.length };
+    }),
+
+  clearOverrides: publicProcedure
+    .input(
+      z.object({
+        month: z.number().min(1).max(12),
+        year: z.number(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const prefix = `${input.year}-${String(input.month).padStart(2, "0")}`;
+      const allItems = db.select().from(lineItems).all();
+      let cleared = 0;
+      for (const item of allItems) {
+        if (
+          item.date.startsWith(prefix) &&
+          (item.statusOverride || item.categoryOverride)
+        ) {
+          db.update(lineItems)
+            .set({ statusOverride: false, categoryOverride: false })
+            .where(eq(lineItems.id, item.id))
+            .run();
+          cleared++;
+        }
+      }
+      return { cleared };
+    }),
+
+  clearMonth: publicProcedure
+    .input(
+      z.object({
+        month: z.number().min(1).max(12),
+        year: z.number(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const prefix = `${input.year}-${String(input.month).padStart(2, "0")}`;
+      const allItems = db.select().from(lineItems).all();
+      const idsToDelete = allItems
+        .filter((item) => item.date.startsWith(prefix))
+        .map((item) => item.id);
+
+      for (const id of idsToDelete) {
+        db.delete(lineItems).where(eq(lineItems.id, id)).run();
+      }
+
+      // Also clean up statements for this period
+      db.delete(statements)
+        .where(
+          sql`${statements.periodMonth} = ${input.month} AND ${statements.periodYear} = ${input.year}`
+        )
+        .run();
+
+      return { deleted: idsToDelete.length };
+    }),
+
+  acceptAndCreateRules: publicProcedure
+    .input(
+      z.object({
+        lineItemId: z.number(),
+        description: z.string(),
+        userId: z.number(),
+        categoryId: z.number(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Accept the line item
+      db.update(lineItems)
+        .set({ status: "accepted", statusOverride: true })
+        .where(eq(lineItems.id, input.lineItemId))
+        .run();
+
+      // Create accept rule for this user (if not exists)
+      const existingAR = db
+        .select()
+        .from(acceptRejectRules)
+        .all()
+        .find(
+          (r) =>
+            r.userId === input.userId &&
+            r.pattern.toLowerCase() === input.description.toLowerCase() &&
+            r.action === "accept"
+        );
+
+      if (!existingAR) {
+        db.insert(acceptRejectRules)
+          .values({
+            userId: input.userId,
+            pattern: input.description,
+            action: "accept",
+          })
+          .run();
+      }
+
+      // Create category rule (if not exists for this pattern)
+      const existingCat = db
+        .select()
+        .from(categoryRules)
+        .all()
+        .find(
+          (r) => r.pattern.toLowerCase() === input.description.toLowerCase()
+        );
+
+      if (!existingCat) {
+        db.insert(categoryRules)
+          .values({
+            pattern: input.description,
+            categoryId: input.categoryId,
+            createdByUserId: input.userId,
+          })
+          .run();
+      }
+
+      return { success: true };
     }),
 
   create: publicProcedure

@@ -46,12 +46,11 @@ export function CategoryRulesPanel() {
 
   const handleCreate = () => {
     if (!pattern.trim() || !categoryId) return;
-    // Use first user as default creator (single-operator model)
     const firstUser = usersQuery.data?.[0];
     if (!firstUser) return;
     createMutation.mutate({
       pattern: pattern.trim(),
-      categoryId: parseInt(categoryId),
+      categoryId: parseInt(categoryId.replace("cat-", "")),
       createdByUserId: firstUser.id,
     });
   };
@@ -70,7 +69,6 @@ export function CategoryRulesPanel() {
 
       {expanded && (
         <div className="mt-3 space-y-3">
-          {/* Existing rules */}
           {rulesQuery.data && rulesQuery.data.length > 0 && (
             <div className="space-y-1 max-h-[200px] overflow-y-auto">
               {rulesQuery.data.map((rule) => (
@@ -100,7 +98,6 @@ export function CategoryRulesPanel() {
             </div>
           )}
 
-          {/* Add new rule */}
           <div className="space-y-2">
             <Input
               value={pattern}
@@ -111,16 +108,14 @@ export function CategoryRulesPanel() {
             <div className="flex gap-2">
               <Select
                 value={categoryId}
-                onValueChange={(v) => {
-                  if (v) setCategoryId(v);
-                }}
+                onValueChange={(v) => { if (v) setCategoryId(v); }}
               >
                 <SelectTrigger className="h-7 text-xs flex-1">
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
                   {categoriesQuery.data?.map((cat) => (
-                    <SelectItem key={cat.id} value={String(cat.id)}>
+                    <SelectItem key={cat.id} value={`cat-${cat.id}`}>
                       {cat.name}
                     </SelectItem>
                   ))}

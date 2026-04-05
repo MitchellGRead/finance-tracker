@@ -79,7 +79,7 @@ export function applyRulesToLineItems(
     // 1. Accept/Reject rules (per-user, longest match)
     const arResult = findBestMatch(item.description, userAcceptRejectRules);
     if (arResult.match) {
-      updates.status = arResult.match.action; // 'accept' or 'reject'
+      updates.status = arResult.match.action === "accept" ? "accepted" : "rejected";
       applied++;
     }
 

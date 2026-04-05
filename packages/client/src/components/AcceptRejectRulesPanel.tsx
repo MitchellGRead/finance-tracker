@@ -47,7 +47,7 @@ export function AcceptRejectRulesPanel() {
   const handleCreate = () => {
     if (!pattern.trim() || !userId) return;
     createMutation.mutate({
-      userId: parseInt(userId),
+      userId: parseInt(userId.replace("user-", "")),
       pattern: pattern.trim(),
       action,
     });
@@ -70,7 +70,6 @@ export function AcceptRejectRulesPanel() {
 
       {expanded && (
         <div className="mt-3 space-y-3">
-          {/* Existing rules */}
           {rulesQuery.data && rulesQuery.data.length > 0 && (
             <div className="space-y-1 max-h-[200px] overflow-y-auto">
               {rulesQuery.data.map((rule) => (
@@ -107,7 +106,6 @@ export function AcceptRejectRulesPanel() {
             </div>
           )}
 
-          {/* Add new rule */}
           <div className="space-y-2">
             <Input
               value={pattern}
@@ -118,16 +116,14 @@ export function AcceptRejectRulesPanel() {
             <div className="flex gap-2">
               <Select
                 value={userId}
-                onValueChange={(v) => {
-                  if (v) setUserId(v);
-                }}
+                onValueChange={(v) => { if (v) setUserId(v); }}
               >
                 <SelectTrigger className="h-7 text-xs flex-1">
                   <SelectValue placeholder="User" />
                 </SelectTrigger>
                 <SelectContent>
                   {usersQuery.data?.map((user) => (
-                    <SelectItem key={user.id} value={String(user.id)}>
+                    <SelectItem key={user.id} value={`user-${user.id}`}>
                       {user.name}
                     </SelectItem>
                   ))}

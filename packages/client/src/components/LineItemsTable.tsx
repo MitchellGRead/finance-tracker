@@ -41,32 +41,29 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     trpc.lineItems.list.queryOptions({ month, year })
   );
 
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: trpc.lineItems.list.queryKey() });
+    queryClient.invalidateQueries({ queryKey: trpc.lineItems.countByMonth.queryKey() });
+  };
+
   const updateMutation = useMutation(
-    trpc.lineItems.update.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: trpc.lineItems.list.queryKey(),
-        });
-      },
-    })
+    trpc.lineItems.update.mutationOptions({ onSuccess: invalidateAll })
   );
-
   const deleteMutation = useMutation(
-    trpc.lineItems.delete.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: trpc.lineItems.list.queryKey(),
-        });
-      },
-    })
+    trpc.lineItems.delete.mutationOptions({ onSuccess: invalidateAll })
   );
-
   const bulkUpdateMutation = useMutation(
-    trpc.lineItems.bulkUpdateStatus.mutationOptions({
+    trpc.lineItems.bulkUpdateStatus.mutationOptions({ onSuccess: invalidateAll })
+  );
+  const clearOverridesMutation = useMutation(
+    trpc.lineItems.clearOverrides.mutationOptions({ onSuccess: invalidateAll })
+  );
+  const saveAsRuleMutation = useMutation(
+    trpc.lineItems.acceptAndCreateRules.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: trpc.lineItems.list.queryKey(),
-        });
+        invalidateAll();
+        queryClient.invalidateQueries({ queryKey: trpc.categoryRules.list.queryKey() });
+        queryClient.invalidateQueries({ queryKey: trpc.acceptRejectRules.list.queryKey() });
       },
     })
   );
@@ -75,7 +72,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
   const filteredItems = items.filter((item) => {
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
-    if (userFilter !== "all" && item.userId !== parseInt(userFilter))
+    if (userFilter !== "all" && item.userId !== parseInt(userFilter.replace("user-", "")))
       return false;
     return true;
   });
@@ -83,6 +80,10 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const pendingIds = filteredItems
     .filter((item) => item.status === "pending")
     .map((item) => item.id);
+
+  const overrideCount = items.filter(
+    (item) => item.statusOverride || item.categoryOverride
+  ).length;
 
   const statusColor = (status: string) => {
     switch (status) {
@@ -118,6 +119,9 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
       currency: "CAD",
     }).format(amount);
 
+  const hasOverride = (item: { statusOverride: boolean; categoryOverride: boolean }) =>
+    item.statusOverride || item.categoryOverride;
+
   return (
     <div className="space-y-3">
       {/* Filters and bulk actions */}
@@ -147,7 +151,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
           <SelectContent>
             <SelectItem value="all">All Users</SelectItem>
             {usersQuery.data?.map((user) => (
-              <SelectItem key={user.id} value={String(user.id)}>
+              <SelectItem key={user.id} value={`user-${user.id}`}>
                 {user.name}
               </SelectItem>
             ))}
@@ -156,6 +160,18 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
         <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
           <span>{filteredItems.length} items</span>
+          {overrideCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() =>
+                clearOverridesMutation.mutate({ month, year })
+              }
+            >
+              Clear overrides ({overrideCount})
+            </Button>
+          )}
           {pendingIds.length > 0 && (
             <Button
               variant="outline"
@@ -187,7 +203,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               <TableHead className="w-[140px]">Category</TableHead>
               <TableHead className="w-[80px] text-right">Split %</TableHead>
               <TableHead className="w-[160px]">Note</TableHead>
-              <TableHead className="w-[40px]"></TableHead>
+              <TableHead className="w-[80px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -206,9 +222,9 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               filteredItems.map((item) => (
                 <TableRow
                   key={item.id}
-                  className={
-                    item.status === "rejected" ? "opacity-50" : undefined
-                  }
+                  className={`${
+                    item.status === "rejected" ? "opacity-50" : ""
+                  } ${hasOverride(item) ? "border-l-2 border-l-blue-400" : ""}`}
                 >
                   {/* Status badge - click to cycle */}
                   <TableCell>
@@ -218,7 +234,6 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                       onClick={() => cycleStatus(item.id, item.status)}
                     >
                       {item.status}
-                      {item.statusOverride && " *"}
                     </Badge>
                   </TableCell>
 
@@ -246,6 +261,14 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                         Manual
                       </Badge>
                     )}
+                    {hasOverride(item) && (
+                      <Badge
+                        variant="outline"
+                        className="ml-1.5 text-[10px] px-1 py-0 border-blue-400 text-blue-500"
+                      >
+                        Override
+                      </Badge>
+                    )}
                   </TableCell>
 
                   {/* User */}
@@ -261,12 +284,12 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                   {/* Category dropdown */}
                   <TableCell>
                     <Select
-                      value={item.categoryId ? String(item.categoryId) : "none"}
+                      value={item.categoryId ? `cat-${item.categoryId}` : "none"}
                       onValueChange={(v) => {
                         if (v === null) return;
                         updateMutation.mutate({
                           id: item.id,
-                          categoryId: v === "none" ? null : parseInt(v),
+                          categoryId: v === "none" ? null : parseInt(v.replace("cat-", "")),
                           categoryOverride: true,
                         });
                       }}
@@ -277,7 +300,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                       <SelectContent>
                         <SelectItem value="none">—</SelectItem>
                         {categoriesQuery.data?.map((cat) => (
-                          <SelectItem key={cat.id} value={String(cat.id)}>
+                          <SelectItem key={cat.id} value={`cat-${cat.id}`}>
                             {cat.name}
                           </SelectItem>
                         ))}
@@ -344,16 +367,37 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                     )}
                   </TableCell>
 
-                  {/* Delete */}
+                  {/* Actions */}
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => deleteMutation.mutate({ id: item.id })}
-                    >
-                      x
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      {/* Save as Rule — show when item has a category */}
+                      {item.categoryId && item.status !== "accepted" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          title="Accept and save as global rule"
+                          onClick={() =>
+                            saveAsRuleMutation.mutate({
+                              lineItemId: item.id,
+                              description: item.description,
+                              userId: item.userId,
+                              categoryId: item.categoryId!,
+                            })
+                          }
+                        >
+                          Rule
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteMutation.mutate({ id: item.id })}
+                      >
+                        x
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

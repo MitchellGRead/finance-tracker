@@ -60,7 +60,7 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
   const handleSubmit = () => {
     if (!userId || !description || !amount) return;
     createMutation.mutate({
-      userId: parseInt(userId),
+      userId: parseInt(userId.replace("user-", "")),
       date,
       description,
       amount: parseFloat(amount),
@@ -88,7 +88,7 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
               </SelectTrigger>
               <SelectContent>
                 {usersQuery.data?.map((user) => (
-                  <SelectItem key={user.id} value={String(user.id)}>
+                  <SelectItem key={user.id} value={`user-${user.id}`}>
                     {user.name}
                   </SelectItem>
                 ))}

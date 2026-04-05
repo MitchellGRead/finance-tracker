@@ -7,11 +7,12 @@ import { UserManager } from "./components/UserManager";
 import { CategoryManager } from "./components/CategoryManager";
 import { CategoryRulesPanel } from "./components/CategoryRulesPanel";
 import { AcceptRejectRulesPanel } from "./components/AcceptRejectRulesPanel";
+import { MonthCalendar } from "./components/MonthCalendar";
 import { LineItemsTable } from "./components/LineItemsTable";
 import { AddLineItem } from "./components/AddLineItem";
 
 export function App() {
-  const { month, year, label, prev, next } = useMonthPicker();
+  const { month, year, label, setMonth, setYear } = useMonthPicker();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -28,6 +29,29 @@ export function App() {
     })
   );
 
+  const clearMonthMutation = useMutation(
+    trpc.lineItems.clearMonth.mutationOptions({
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({
+          queryKey: trpc.lineItems.list.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: trpc.lineItems.countByMonth.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: trpc.statements.list.queryKey(),
+        });
+        alert(`Cleared ${data.deleted} line items for ${label}`);
+      },
+    })
+  );
+
+  const handleClearMonth = () => {
+    if (window.confirm(`Clear all line items for ${label}? This cannot be undone.`)) {
+      clearMonthMutation.mutate({ month, year });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Top bar */}
@@ -37,28 +61,7 @@ export function App() {
             Finance Tracker
           </h1>
 
-          {/* Month picker */}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={prev}
-              className="h-7 px-2"
-            >
-              &larr;
-            </Button>
-            <span className="text-sm font-medium w-[140px] text-center">
-              {label}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={next}
-              className="h-7 px-2"
-            >
-              &rarr;
-            </Button>
-          </div>
+          <span className="text-sm font-medium text-foreground">{label}</span>
 
           <div className="flex items-center gap-2">
             <Button
@@ -70,6 +73,15 @@ export function App() {
             >
               {reapplyMutation.isPending ? "Applying..." : "Re-apply Rules"}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-sm text-destructive hover:text-destructive"
+              onClick={handleClearMonth}
+              disabled={clearMonthMutation.isPending}
+            >
+              Clear Month
+            </Button>
             <AddLineItem month={month} year={year} />
           </div>
         </div>
@@ -80,6 +92,15 @@ export function App() {
         <div className="flex gap-4">
           {/* Sidebar */}
           <aside className="w-[280px] shrink-0 space-y-4">
+            <MonthCalendar
+              month={month}
+              year={year}
+              onSelect={(m, y) => {
+                setMonth(m);
+                setYear(y);
+              }}
+              onYearChange={setYear}
+            />
             <UserManager />
             <ImportPanel month={month} year={year} />
             <CategoryManager />
