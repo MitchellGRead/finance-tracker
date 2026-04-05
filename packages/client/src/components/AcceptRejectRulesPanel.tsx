@@ -17,11 +17,14 @@ export function AcceptRejectRulesPanel() {
   const queryClient = useQueryClient();
   const [pattern, setPattern] = useState("");
   const [action, setAction] = useState<"accept" | "reject">("reject");
-  const [userId, setUserId] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
   const [expanded, setExpanded] = useState(false);
 
   const rulesQuery = useQuery(trpc.acceptRejectRules.list.queryOptions());
   const usersQuery = useQuery(trpc.users.list.queryOptions());
+
+  const getUserId = (name: string) =>
+    usersQuery.data?.find((u) => u.name === name)?.id;
 
   const createMutation = useMutation(
     trpc.acceptRejectRules.create.mutationOptions({
@@ -45,9 +48,10 @@ export function AcceptRejectRulesPanel() {
   );
 
   const handleCreate = () => {
+    const userId = getUserId(userName);
     if (!pattern.trim() || !userId) return;
     createMutation.mutate({
-      userId: parseInt(userId.replace("user-", "")),
+      userId,
       pattern: pattern.trim(),
       action,
     });
@@ -115,15 +119,15 @@ export function AcceptRejectRulesPanel() {
             />
             <div className="flex gap-2">
               <Select
-                value={userId}
-                onValueChange={(v) => { if (v) setUserId(v); }}
+                value={userName}
+                onValueChange={(v) => { if (v) setUserName(v); }}
               >
                 <SelectTrigger className="h-7 text-xs flex-1">
                   <SelectValue placeholder="User" />
                 </SelectTrigger>
                 <SelectContent>
                   {usersQuery.data?.map((user) => (
-                    <SelectItem key={user.id} value={`user-${user.id}`}>
+                    <SelectItem key={user.id} value={user.name}>
                       {user.name}
                     </SelectItem>
                   ))}
@@ -148,7 +152,7 @@ export function AcceptRejectRulesPanel() {
                 className="h-7 text-xs"
                 onClick={handleCreate}
                 disabled={
-                  !pattern.trim() || !userId || createMutation.isPending
+                  !pattern.trim() || !userName || createMutation.isPending
                 }
               >
                 Add

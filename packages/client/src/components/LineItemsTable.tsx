@@ -70,9 +70,15 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
   const items = lineItemsQuery.data ?? [];
 
+  const getUserName = (userId: number) =>
+    usersQuery.data?.find((u) => u.id === userId)?.name ?? "Unknown";
+
+  const getCategoryId = (name: string) =>
+    categoriesQuery.data?.find((c) => c.name === name)?.id ?? null;
+
   const filteredItems = items.filter((item) => {
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
-    if (userFilter !== "all" && item.userId !== parseInt(userFilter.replace("user-", "")))
+    if (userFilter !== "all" && getUserName(item.userId) !== userFilter)
       return false;
     return true;
   });
@@ -82,7 +88,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     .map((item) => item.id);
 
   const overrideCount = items.filter(
-    (item) => item.statusOverride || item.categoryOverride
+    (item) => item.statusOverride || item.categoryOverride || item.splitRatioOverride
   ).length;
 
   const statusColor = (status: string) => {
@@ -110,17 +116,17 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     });
   };
 
-  const getUserName = (userId: number) =>
-    usersQuery.data?.find((u) => u.id === userId)?.name ?? "Unknown";
-
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("en-CA", {
       style: "currency",
       currency: "CAD",
     }).format(amount);
 
-  const hasOverride = (item: { statusOverride: boolean; categoryOverride: boolean }) =>
-    item.statusOverride || item.categoryOverride;
+  const hasOverride = (item: {
+    statusOverride: boolean;
+    categoryOverride: boolean;
+    splitRatioOverride: boolean;
+  }) => item.statusOverride || item.categoryOverride || item.splitRatioOverride;
 
   return (
     <div className="space-y-3">
@@ -151,7 +157,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
           <SelectContent>
             <SelectItem value="all">All Users</SelectItem>
             {usersQuery.data?.map((user) => (
-              <SelectItem key={user.id} value={`user-${user.id}`}>
+              <SelectItem key={user.id} value={user.name}>
                 {user.name}
               </SelectItem>
             ))}
@@ -281,15 +287,16 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                     {formatCurrency(item.amount)}
                   </TableCell>
 
-                  {/* Category dropdown */}
+                  {/* Category dropdown — use name as value */}
                   <TableCell>
                     <Select
-                      value={item.categoryId ? `cat-${item.categoryId}` : "none"}
+                      value={item.categoryName ?? "—"}
                       onValueChange={(v) => {
                         if (v === null) return;
+                        const catId = v === "—" ? null : getCategoryId(v);
                         updateMutation.mutate({
                           id: item.id,
-                          categoryId: v === "none" ? null : parseInt(v.replace("cat-", "")),
+                          categoryId: catId,
                           categoryOverride: true,
                         });
                       }}
@@ -298,9 +305,9 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                         <SelectValue placeholder="—" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">—</SelectItem>
+                        <SelectItem value="—">—</SelectItem>
                         {categoriesQuery.data?.map((cat) => (
-                          <SelectItem key={cat.id} value={`cat-${cat.id}`}>
+                          <SelectItem key={cat.id} value={cat.name}>
                             {cat.name}
                           </SelectItem>
                         ))}
@@ -310,22 +317,28 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
                   {/* Split ratio */}
                   <TableCell className="text-right">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={Math.round(item.splitRatio * 100)}
-                      onChange={(e) => {
-                        const pct = parseInt(e.target.value);
-                        if (!isNaN(pct) && pct >= 0 && pct <= 100) {
-                          updateMutation.mutate({
-                            id: item.id,
-                            splitRatio: pct / 100,
-                          });
-                        }
-                      }}
-                      className="h-7 w-16 text-xs text-right px-1 ml-auto"
-                    />
+                    <div className="flex items-center justify-end gap-1">
+                      {item.splitRatioOverride && (
+                        <span className="text-blue-500 text-[10px]" title="Override">*</span>
+                      )}
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={Math.round(item.splitRatio * 100)}
+                        onChange={(e) => {
+                          const pct = parseInt(e.target.value);
+                          if (!isNaN(pct) && pct >= 0 && pct <= 100) {
+                            updateMutation.mutate({
+                              id: item.id,
+                              splitRatio: pct / 100,
+                              splitRatioOverride: true,
+                            });
+                          }
+                        }}
+                        className="h-7 w-16 text-xs text-right px-1"
+                      />
+                    </div>
                   </TableCell>
 
                   {/* Note */}
@@ -370,8 +383,8 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                   {/* Actions */}
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      {/* Save as Rule — show when item has a category */}
-                      {item.categoryId && item.status !== "accepted" && (
+                      {/* Save as Rule — show when item has a category assigned */}
+                      {item.categoryId && (
                         <Button
                           variant="ghost"
                           size="sm"

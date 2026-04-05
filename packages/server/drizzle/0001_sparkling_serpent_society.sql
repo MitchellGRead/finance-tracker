@@ -1,0 +1,1 @@
+ALTER TABLE `line_items` ADD `split_ratio_override` integer DEFAULT false NOT NULL;

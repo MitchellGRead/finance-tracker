@@ -15,12 +15,15 @@ export function CategoryRulesPanel() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [pattern, setPattern] = useState("");
-  const [categoryId, setCategoryId] = useState<string>("");
+  const [categoryName, setCategoryName] = useState<string>("");
   const [expanded, setExpanded] = useState(false);
 
   const rulesQuery = useQuery(trpc.categoryRules.list.queryOptions());
   const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
   const usersQuery = useQuery(trpc.users.list.queryOptions());
+
+  const getCategoryId = (name: string) =>
+    categoriesQuery.data?.find((c) => c.name === name)?.id;
 
   const createMutation = useMutation(
     trpc.categoryRules.create.mutationOptions({
@@ -29,7 +32,7 @@ export function CategoryRulesPanel() {
           queryKey: trpc.categoryRules.list.queryKey(),
         });
         setPattern("");
-        setCategoryId("");
+        setCategoryName("");
       },
     })
   );
@@ -45,12 +48,13 @@ export function CategoryRulesPanel() {
   );
 
   const handleCreate = () => {
-    if (!pattern.trim() || !categoryId) return;
+    const catId = getCategoryId(categoryName);
+    if (!pattern.trim() || !catId) return;
     const firstUser = usersQuery.data?.[0];
     if (!firstUser) return;
     createMutation.mutate({
       pattern: pattern.trim(),
-      categoryId: parseInt(categoryId.replace("cat-", "")),
+      categoryId: catId,
       createdByUserId: firstUser.id,
     });
   };
@@ -107,15 +111,15 @@ export function CategoryRulesPanel() {
             />
             <div className="flex gap-2">
               <Select
-                value={categoryId}
-                onValueChange={(v) => { if (v) setCategoryId(v); }}
+                value={categoryName}
+                onValueChange={(v) => { if (v) setCategoryName(v); }}
               >
                 <SelectTrigger className="h-7 text-xs flex-1">
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
                   {categoriesQuery.data?.map((cat) => (
-                    <SelectItem key={cat.id} value={`cat-${cat.id}`}>
+                    <SelectItem key={cat.id} value={cat.name}>
                       {cat.name}
                     </SelectItem>
                   ))}
@@ -126,7 +130,7 @@ export function CategoryRulesPanel() {
                 className="h-7 text-xs"
                 onClick={handleCreate}
                 disabled={
-                  !pattern.trim() || !categoryId || createMutation.isPending
+                  !pattern.trim() || !categoryName || createMutation.isPending
                 }
               >
                 Add

@@ -57,6 +57,9 @@ export const lineItems = sqliteTable("line_items", {
   categoryOverride: int("category_override", { mode: "boolean" })
     .notNull()
     .default(false),
+  splitRatioOverride: int("split_ratio_override", { mode: "boolean" })
+    .notNull()
+    .default(false),
   note: text("note"),
   isManual: int("is_manual", { mode: "boolean" }).notNull().default(false),
   isCredit: int("is_credit", { mode: "boolean" }).notNull().default(false),

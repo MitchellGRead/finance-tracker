@@ -10,6 +10,7 @@ import {
   acceptRejectRules,
 } from "../db/schema";
 import { GLOBAL_DEFAULT_SPLIT_RATIO } from "@finance-tracker/shared";
+import { applyRulesToLineItems } from "../services/ruleEngine";
 
 export const lineItemsRouter = router({
   list: publicProcedure
@@ -36,6 +37,7 @@ export const lineItemsRouter = router({
           status: lineItems.status,
           statusOverride: lineItems.statusOverride,
           categoryOverride: lineItems.categoryOverride,
+          splitRatioOverride: lineItems.splitRatioOverride,
           note: lineItems.note,
           isManual: lineItems.isManual,
           isCredit: lineItems.isCredit,
@@ -83,6 +85,7 @@ export const lineItemsRouter = router({
         categoryId: z.number().nullable().optional(),
         categoryOverride: z.boolean().optional(),
         splitRatio: z.number().min(0).max(1).optional(),
+        splitRatioOverride: z.boolean().optional(),
         note: z.string().nullable().optional(),
       })
     )
@@ -123,20 +126,42 @@ export const lineItemsRouter = router({
     .mutation(async ({ input }) => {
       const prefix = `${input.year}-${String(input.month).padStart(2, "0")}`;
       const allItems = db.select().from(lineItems).all();
-      let cleared = 0;
-      for (const item of allItems) {
-        if (
+      const overriddenItems = allItems.filter(
+        (item) =>
           item.date.startsWith(prefix) &&
-          (item.statusOverride || item.categoryOverride)
-        ) {
-          db.update(lineItems)
-            .set({ statusOverride: false, categoryOverride: false })
-            .where(eq(lineItems.id, item.id))
-            .run();
-          cleared++;
-        }
+          (item.statusOverride || item.categoryOverride || item.splitRatioOverride)
+      );
+
+      // Reset all overrides to defaults
+      for (const item of overriddenItems) {
+        db.update(lineItems)
+          .set({
+            status: "pending",
+            statusOverride: false,
+            categoryId: null,
+            categoryOverride: false,
+            splitRatio: GLOBAL_DEFAULT_SPLIT_RATIO,
+            splitRatioOverride: false,
+          })
+          .where(eq(lineItems.id, item.id))
+          .run();
       }
-      return { cleared };
+
+      // Re-apply rules to these items grouped by user
+      const byUser = new Map<number, number[]>();
+      for (const item of overriddenItems) {
+        const ids = byUser.get(item.userId) ?? [];
+        ids.push(item.id);
+        byUser.set(item.userId, ids);
+      }
+
+      let rulesApplied = 0;
+      for (const [userId, ids] of byUser) {
+        const result = applyRulesToLineItems(ids, userId);
+        rulesApplied += result.applied;
+      }
+
+      return { cleared: overriddenItems.length, rulesApplied };
     }),
 
   clearMonth: publicProcedure
@@ -157,7 +182,6 @@ export const lineItemsRouter = router({
         db.delete(lineItems).where(eq(lineItems.id, id)).run();
       }
 
-      // Also clean up statements for this period
       db.delete(statements)
         .where(
           sql`${statements.periodMonth} = ${input.month} AND ${statements.periodYear} = ${input.year}`

@@ -21,23 +21,25 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
   const queryClient = useQueryClient();
 
   const [sourceType, setSourceType] = useState<"amex" | "td">("amex");
-  const [userId, setUserId] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
 
+  const getUserId = (name: string) =>
+    usersQuery.data?.find((u) => u.name === name)?.id;
+
   const uploadMutation = useMutation(
     trpc.statements.upload.mutationOptions({
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: trpc.lineItems.list.queryKey() });
+        queryClient.invalidateQueries({ queryKey: trpc.lineItems.countByMonth.queryKey() });
         queryClient.invalidateQueries({ queryKey: trpc.statements.list.queryKey() });
         setFile(null);
-        // Reset file input so the same file can be re-selected
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
+        uploadMutation.reset();
+        if (fileInputRef.current) fileInputRef.current.value = "";
       },
     })
   );
@@ -48,7 +50,6 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile?.name.endsWith(".csv")) {
       setFile(droppedFile);
-      // Reset mutation state when new file is dropped
       uploadMutation.reset();
     }
   }, [uploadMutation]);
@@ -62,11 +63,12 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
   };
 
   const handleUpload = async () => {
+    const userId = getUserId(userName);
     if (!file || !userId) return;
 
     const content = await file.text();
     uploadMutation.mutate({
-      userId: parseInt(userId.replace("user-", "")),
+      userId,
       sourceType,
       fileName: file.name,
       content,
@@ -100,13 +102,13 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
 
         <div>
           <Label className="text-xs mb-1">User</Label>
-          <Select value={userId} onValueChange={(v) => { if (v) setUserId(v); }}>
+          <Select value={userName} onValueChange={(v) => { if (v) setUserName(v); }}>
             <SelectTrigger className="h-8 text-sm">
               <SelectValue placeholder="Select user" />
             </SelectTrigger>
             <SelectContent>
               {usersQuery.data?.map((user) => (
-                <SelectItem key={user.id} value={`user-${user.id}`}>
+                <SelectItem key={user.id} value={user.name}>
                   {user.name}
                 </SelectItem>
               ))}
@@ -162,13 +164,9 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
       <Button
         className="mt-3 w-full h-8 text-sm"
         onClick={handleUpload}
-        disabled={!file || !userId || uploadMutation.isPending}
+        disabled={!file || !userName || uploadMutation.isPending}
       >
-        {uploadMutation.isPending
-          ? "Importing..."
-          : uploadMutation.isSuccess
-            ? `Imported ${uploadMutation.data.lineItemCount} items`
-            : "Import"}
+        {uploadMutation.isPending ? "Importing..." : "Import"}
       </Button>
 
       {uploadMutation.isError && (

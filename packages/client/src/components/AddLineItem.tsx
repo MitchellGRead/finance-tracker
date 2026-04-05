@@ -28,7 +28,7 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [userId, setUserId] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(
@@ -37,6 +37,9 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
   const [note, setNote] = useState("");
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
+
+  const getUserId = (name: string) =>
+    usersQuery.data?.find((u) => u.name === name)?.id;
 
   const createMutation = useMutation(
     trpc.lineItems.create.mutationOptions({
@@ -54,13 +57,14 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
     setDescription("");
     setAmount("");
     setNote("");
-    setUserId("");
+    setUserName("");
   };
 
   const handleSubmit = () => {
+    const userId = getUserId(userName);
     if (!userId || !description || !amount) return;
     createMutation.mutate({
-      userId: parseInt(userId.replace("user-", "")),
+      userId,
       date,
       description,
       amount: parseFloat(amount),
@@ -82,13 +86,13 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
         <div className="grid gap-3 py-2">
           <div>
             <Label className="text-xs">User</Label>
-            <Select value={userId} onValueChange={(v) => { if (v) setUserId(v); }}>
+            <Select value={userName} onValueChange={(v) => { if (v) setUserName(v); }}>
               <SelectTrigger className="h-8 text-sm mt-1">
                 <SelectValue placeholder="Select user" />
               </SelectTrigger>
               <SelectContent>
                 {usersQuery.data?.map((user) => (
-                  <SelectItem key={user.id} value={`user-${user.id}`}>
+                  <SelectItem key={user.id} value={user.name}>
                     {user.name}
                   </SelectItem>
                 ))}
@@ -135,7 +139,7 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={!userId || !description || !amount || createMutation.isPending}
+            disabled={!userName || !description || !amount || createMutation.isPending}
             className="h-8 text-sm"
           >
             {createMutation.isPending ? "Adding..." : "Add Item"}
