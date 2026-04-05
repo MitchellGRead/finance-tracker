@@ -1,0 +1,19 @@
+{
+  "name": "finance-tracker",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm run --parallel dev",
+    "build": "pnpm run --parallel build",
+    "db:generate": "pnpm --filter @finance-tracker/server db:generate",
+    "db:migrate": "pnpm --filter @finance-tracker/server db:migrate"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}

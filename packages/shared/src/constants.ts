@@ -1,0 +1,1 @@
+export const GLOBAL_DEFAULT_SPLIT_RATIO = 0.5;

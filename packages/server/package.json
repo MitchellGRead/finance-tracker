@@ -1,0 +1,30 @@
+{
+  "name": "@finance-tracker/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./routers": "./src/routers/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@finance-tracker/shared": "workspace:*",
+    "@hono/node-server": "^1.14.3",
+    "@trpc/server": "^11.1.0",
+    "better-sqlite3": "^11.9.1",
+    "drizzle-orm": "^0.44.2",
+    "hono": "^4.7.10",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "drizzle-kit": "^0.31.5",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
