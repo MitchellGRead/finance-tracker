@@ -20,6 +20,14 @@ app.use("/trpc/*", async (c) => {
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-const port = 3100;
+const port = 3200;
 console.log(`Server running on http://localhost:${port}`);
-serve({ fetch: app.fetch, port });
+const server = serve({ fetch: app.fetch, port });
+
+// Graceful shutdown — release the port when the process is killed
+const shutdown = () => {
+  server.close();
+  process.exit(0);
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
