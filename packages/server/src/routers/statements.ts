@@ -5,6 +5,10 @@ import { db } from "../db";
 import { statements, lineItems } from "../db/schema";
 import { parseCsv } from "../parsers";
 import { GLOBAL_DEFAULT_SPLIT_RATIO } from "@finance-tracker/shared";
+import {
+  applyRulesToLineItems,
+  reapplyRulesForPeriod,
+} from "../services/ruleEngine";
 
 export const statementsRouter = router({
   list: publicProcedure
@@ -61,8 +65,12 @@ export const statementsRouter = router({
         .returning()
         .get();
 
+      let rulesApplied = 0;
+      let ruleConflicts = 0;
+
       if (parsed.length > 0) {
-        db.insert(lineItems)
+        const inserted = db
+          .insert(lineItems)
           .values(
             parsed.map((item) => ({
               statementId: statement.id,
@@ -75,13 +83,32 @@ export const statementsRouter = router({
               isCredit: item.isCredit,
             }))
           )
-          .run();
+          .returning({ id: lineItems.id })
+          .all();
+
+        const insertedIds = inserted.map((row) => row.id);
+        const ruleResult = applyRulesToLineItems(insertedIds, input.userId);
+        rulesApplied = ruleResult.applied;
+        ruleConflicts = ruleResult.conflicts;
       }
 
       return {
         statement,
         lineItemCount: parsed.length,
+        rulesApplied,
+        ruleConflicts,
       };
+    }),
+
+  reapplyRules: publicProcedure
+    .input(
+      z.object({
+        month: z.number().min(1).max(12),
+        year: z.number(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return reapplyRulesForPeriod(input.month, input.year);
     }),
 
   delete: publicProcedure

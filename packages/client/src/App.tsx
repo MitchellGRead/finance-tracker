@@ -1,13 +1,32 @@
+import { useTRPC } from "./lib/trpc";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "./components/ui/button";
 import { useMonthPicker } from "./hooks/useMonthPicker";
 import { ImportPanel } from "./components/ImportPanel";
 import { UserManager } from "./components/UserManager";
 import { CategoryManager } from "./components/CategoryManager";
+import { CategoryRulesPanel } from "./components/CategoryRulesPanel";
+import { AcceptRejectRulesPanel } from "./components/AcceptRejectRulesPanel";
 import { LineItemsTable } from "./components/LineItemsTable";
 import { AddLineItem } from "./components/AddLineItem";
 
 export function App() {
   const { month, year, label, prev, next } = useMonthPicker();
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+
+  const reapplyMutation = useMutation(
+    trpc.statements.reapplyRules.mutationOptions({
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({
+          queryKey: trpc.lineItems.list.queryKey(),
+        });
+        alert(
+          `Rules re-applied: ${data.applied} matches, ${data.conflicts} conflicts`
+        );
+      },
+    })
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -42,6 +61,15 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-sm"
+              onClick={() => reapplyMutation.mutate({ month, year })}
+              disabled={reapplyMutation.isPending}
+            >
+              {reapplyMutation.isPending ? "Applying..." : "Re-apply Rules"}
+            </Button>
             <AddLineItem month={month} year={year} />
           </div>
         </div>
@@ -55,6 +83,8 @@ export function App() {
             <UserManager />
             <ImportPanel month={month} year={year} />
             <CategoryManager />
+            <CategoryRulesPanel />
+            <AcceptRejectRulesPanel />
           </aside>
 
           {/* Main area */}
