@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { suggestPattern } from "../lib/patterns";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -27,6 +28,71 @@ interface LineItemsTableProps {
 
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
 
+interface MatchingRules {
+  categoryRule: { pattern: string; categoryName: string | null } | null;
+  statusRule: { pattern: string; action: string } | null;
+}
+
+function findMatchingRules(
+  description: string,
+  catRules: Array<{ pattern: string; categoryName: string | null }>,
+  arRules: Array<{ pattern: string; action: string; userId: number }>,
+  userId: number
+): MatchingRules {
+  const descLower = description.toLowerCase();
+
+  // Find best category rule (longest match)
+  let bestCat: (typeof catRules)[number] | null = null;
+  let bestCatLen = 0;
+  for (const rule of catRules) {
+    if (
+      descLower.includes(rule.pattern.toLowerCase()) &&
+      rule.pattern.length > bestCatLen
+    ) {
+      bestCat = rule;
+      bestCatLen = rule.pattern.length;
+    }
+  }
+
+  // Find best status rule for this user (longest match)
+  let bestAR: (typeof arRules)[number] | null = null;
+  let bestARLen = 0;
+  for (const rule of arRules) {
+    if (
+      rule.userId === userId &&
+      descLower.includes(rule.pattern.toLowerCase()) &&
+      rule.pattern.length > bestARLen
+    ) {
+      bestAR = rule;
+      bestARLen = rule.pattern.length;
+    }
+  }
+
+  return {
+    categoryRule: bestCat
+      ? { pattern: bestCat.pattern, categoryName: bestCat.categoryName }
+      : null,
+    statusRule: bestAR
+      ? { pattern: bestAR.pattern, action: bestAR.action }
+      : null,
+  };
+}
+
+function isRealOverride(item: {
+  statusOverride: boolean;
+  status: string;
+  categoryOverride: boolean;
+  categoryId: number | null;
+  splitRatioOverride: boolean;
+  splitRatio: number;
+}): boolean {
+  if (item.statusOverride && item.status !== "pending") return true;
+  if (item.categoryOverride && item.categoryId !== null) return true;
+  if (item.splitRatioOverride && Math.abs(item.splitRatio - 0.5) > 0.001)
+    return true;
+  return false;
+}
+
 export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -35,15 +101,25 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const [editingNote, setEditingNote] = useState<number | null>(null);
   const [noteValue, setNoteValue] = useState("");
 
+  // Rule creation popover state
+  const [ruleItemId, setRuleItemId] = useState<number | null>(null);
+  const [rulePattern, setRulePattern] = useState("");
+
   const usersQuery = useQuery(trpc.users.list.queryOptions());
   const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
   const lineItemsQuery = useQuery(
     trpc.lineItems.list.queryOptions({ month, year })
   );
+  const catRulesQuery = useQuery(trpc.categoryRules.list.queryOptions());
+  const arRulesQuery = useQuery(trpc.acceptRejectRules.list.queryOptions());
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: trpc.lineItems.list.queryKey() });
-    queryClient.invalidateQueries({ queryKey: trpc.lineItems.countByMonth.queryKey() });
+    queryClient.invalidateQueries({
+      queryKey: trpc.lineItems.list.queryKey(),
+    });
+    queryClient.invalidateQueries({
+      queryKey: trpc.lineItems.countByMonth.queryKey(),
+    });
   };
 
   const updateMutation = useMutation(
@@ -53,7 +129,9 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     trpc.lineItems.delete.mutationOptions({ onSuccess: invalidateAll })
   );
   const bulkUpdateMutation = useMutation(
-    trpc.lineItems.bulkUpdateStatus.mutationOptions({ onSuccess: invalidateAll })
+    trpc.lineItems.bulkUpdateStatus.mutationOptions({
+      onSuccess: invalidateAll,
+    })
   );
   const clearOverridesMutation = useMutation(
     trpc.lineItems.clearOverrides.mutationOptions({ onSuccess: invalidateAll })
@@ -62,13 +140,20 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     trpc.lineItems.acceptAndCreateRules.mutationOptions({
       onSuccess: () => {
         invalidateAll();
-        queryClient.invalidateQueries({ queryKey: trpc.categoryRules.list.queryKey() });
-        queryClient.invalidateQueries({ queryKey: trpc.acceptRejectRules.list.queryKey() });
+        queryClient.invalidateQueries({
+          queryKey: trpc.categoryRules.list.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: trpc.acceptRejectRules.list.queryKey(),
+        });
+        setRuleItemId(null);
       },
     })
   );
 
   const items = lineItemsQuery.data ?? [];
+  const catRules = catRulesQuery.data ?? [];
+  const arRules = arRulesQuery.data ?? [];
 
   const getUserName = (userId: number) =>
     usersQuery.data?.find((u) => u.id === userId)?.name ?? "Unknown";
@@ -87,9 +172,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     .filter((item) => item.status === "pending")
     .map((item) => item.id);
 
-  const overrideCount = items.filter(
-    (item) => item.statusOverride || item.categoryOverride || item.splitRatioOverride
-  ).length;
+  const overrideCount = items.filter((item) => isRealOverride(item)).length;
 
   const statusColor = (status: string) => {
     switch (status) {
@@ -122,11 +205,27 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
       currency: "CAD",
     }).format(amount);
 
-  const hasOverride = (item: {
-    statusOverride: boolean;
-    categoryOverride: boolean;
-    splitRatioOverride: boolean;
-  }) => item.statusOverride || item.categoryOverride || item.splitRatioOverride;
+  // Check if an item has been modified from defaults (and thus could become a rule)
+  const isModifiedFromDefault = (item: (typeof items)[number]) =>
+    item.status !== "pending" || item.categoryId !== null;
+
+  const openRulePopover = (item: (typeof items)[number]) => {
+    setRuleItemId(item.id);
+    setRulePattern(suggestPattern(item.description));
+  };
+
+  const confirmSaveRule = (item: (typeof items)[number]) => {
+    saveAsRuleMutation.mutate({
+      lineItemId: item.id,
+      pattern: rulePattern,
+      userId: item.userId,
+      categoryId: item.categoryId,
+      status:
+        item.status === "rejected"
+          ? "rejected"
+          : "accepted",
+    });
+  };
 
   return (
     <div className="space-y-3">
@@ -134,7 +233,9 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
       <div className="flex items-center gap-3 flex-wrap">
         <Select
           value={statusFilter}
-          onValueChange={(v) => { if (v) setStatusFilter(v as StatusFilter); }}
+          onValueChange={(v) => {
+            if (v) setStatusFilter(v as StatusFilter);
+          }}
         >
           <SelectTrigger className="h-8 w-[140px] text-sm">
             <SelectValue placeholder="Status" />
@@ -149,7 +250,9 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
         <Select
           value={userFilter}
-          onValueChange={(v) => { if (v) setUserFilter(v); }}
+          onValueChange={(v) => {
+            if (v) setUserFilter(v);
+          }}
         >
           <SelectTrigger className="h-8 w-[140px] text-sm">
             <SelectValue placeholder="User" />
@@ -171,9 +274,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               variant="outline"
               size="sm"
               className="h-7 text-xs"
-              onClick={() =>
-                clearOverridesMutation.mutate({ month, year })
-              }
+              onClick={() => clearOverridesMutation.mutate({ month, year })}
             >
               Clear overrides ({overrideCount})
             </Button>
@@ -209,7 +310,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               <TableHead className="w-[140px]">Category</TableHead>
               <TableHead className="w-[80px] text-right">Split %</TableHead>
               <TableHead className="w-[160px]">Note</TableHead>
-              <TableHead className="w-[80px]"></TableHead>
+              <TableHead className="w-[100px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -225,195 +326,274 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredItems.map((item) => (
-                <TableRow
-                  key={item.id}
-                  className={`${
-                    item.status === "rejected" ? "opacity-50" : ""
-                  } ${hasOverride(item) ? "border-l-2 border-l-blue-400" : ""}`}
-                >
-                  {/* Status badge - click to cycle */}
-                  <TableCell>
-                    <Badge
-                      variant={statusColor(item.status)}
-                      className="cursor-pointer text-xs select-none"
-                      onClick={() => cycleStatus(item.id, item.status)}
-                    >
-                      {item.status}
-                    </Badge>
-                  </TableCell>
+              filteredItems.map((item) => {
+                const rules = findMatchingRules(
+                  item.description,
+                  catRules,
+                  arRules,
+                  item.userId
+                );
+                const hasCoverage =
+                  rules.categoryRule !== null || rules.statusRule !== null;
+                const showRuleButton =
+                  !hasCoverage && isModifiedFromDefault(item);
+                const isEditing = ruleItemId === item.id;
+                const realOverride = isRealOverride(item);
 
-                  {/* Date */}
-                  <TableCell className="text-xs tabular-nums">
-                    {item.date}
-                  </TableCell>
-
-                  {/* Description */}
-                  <TableCell className="text-sm font-medium max-w-[300px] truncate">
-                    {item.isCredit && (
+                return (
+                  <TableRow
+                    key={item.id}
+                    className={`${
+                      item.status === "rejected" ? "opacity-50" : ""
+                    } ${realOverride ? "border-l-2 border-l-blue-400" : ""}`}
+                  >
+                    {/* Status badge */}
+                    <TableCell>
                       <Badge
-                        variant="outline"
-                        className="mr-1.5 text-[10px] px-1 py-0"
+                        variant={statusColor(item.status)}
+                        className="cursor-pointer text-xs select-none"
+                        onClick={() => cycleStatus(item.id, item.status)}
                       >
-                        CR
+                        {item.status}
                       </Badge>
-                    )}
-                    {item.description}
-                    {item.isManual && (
-                      <Badge
-                        variant="outline"
-                        className="ml-1.5 text-[10px] px-1 py-0"
-                      >
-                        Manual
-                      </Badge>
-                    )}
-                    {hasOverride(item) && (
-                      <Badge
-                        variant="outline"
-                        className="ml-1.5 text-[10px] px-1 py-0 border-blue-400 text-blue-500"
-                      >
-                        Override
-                      </Badge>
-                    )}
-                  </TableCell>
+                    </TableCell>
 
-                  {/* User */}
-                  <TableCell className="text-xs">
-                    {getUserName(item.userId)}
-                  </TableCell>
+                    {/* Date */}
+                    <TableCell className="text-xs tabular-nums">
+                      {item.date}
+                    </TableCell>
 
-                  {/* Amount */}
-                  <TableCell className="text-right text-sm tabular-nums">
-                    {formatCurrency(item.amount)}
-                  </TableCell>
-
-                  {/* Category dropdown — use name as value */}
-                  <TableCell>
-                    <Select
-                      value={item.categoryName ?? "—"}
-                      onValueChange={(v) => {
-                        if (v === null) return;
-                        const catId = v === "—" ? null : getCategoryId(v);
-                        updateMutation.mutate({
-                          id: item.id,
-                          categoryId: catId,
-                          categoryOverride: true,
-                        });
-                      }}
-                    >
-                      <SelectTrigger className="h-7 text-xs border-none shadow-none px-1">
-                        <SelectValue placeholder="—" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="—">—</SelectItem>
-                        {categoriesQuery.data?.map((cat) => (
-                          <SelectItem key={cat.id} value={cat.name}>
-                            {cat.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-
-                  {/* Split ratio */}
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {item.splitRatioOverride && (
-                        <span className="text-blue-500 text-[10px]" title="Override">*</span>
+                    {/* Description */}
+                    <TableCell className="text-sm font-medium max-w-[300px] truncate">
+                      {item.isCredit && (
+                        <Badge
+                          variant="outline"
+                          className="mr-1.5 text-[10px] px-1 py-0"
+                        >
+                          CR
+                        </Badge>
                       )}
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={Math.round(item.splitRatio * 100)}
-                        onChange={(e) => {
-                          const pct = parseInt(e.target.value);
-                          if (!isNaN(pct) && pct >= 0 && pct <= 100) {
-                            updateMutation.mutate({
-                              id: item.id,
-                              splitRatio: pct / 100,
-                              splitRatioOverride: true,
-                            });
-                          }
-                        }}
-                        className="h-7 w-16 text-xs text-right px-1"
-                      />
-                    </div>
-                  </TableCell>
+                      {item.description}
+                      {item.isManual && (
+                        <Badge
+                          variant="outline"
+                          className="ml-1.5 text-[10px] px-1 py-0"
+                        >
+                          Manual
+                        </Badge>
+                      )}
+                      {realOverride && (
+                        <Badge
+                          variant="outline"
+                          className="ml-1.5 text-[10px] px-1 py-0 border-blue-400 text-blue-500"
+                        >
+                          Override
+                        </Badge>
+                      )}
+                    </TableCell>
 
-                  {/* Note */}
-                  <TableCell>
-                    {editingNote === item.id ? (
-                      <Input
-                        value={noteValue}
-                        onChange={(e) => setNoteValue(e.target.value)}
-                        onBlur={() => {
+                    {/* User */}
+                    <TableCell className="text-xs">
+                      {getUserName(item.userId)}
+                    </TableCell>
+
+                    {/* Amount */}
+                    <TableCell className="text-right text-sm tabular-nums">
+                      {formatCurrency(item.amount)}
+                    </TableCell>
+
+                    {/* Category */}
+                    <TableCell>
+                      <Select
+                        value={item.categoryName ?? "—"}
+                        onValueChange={(v) => {
+                          if (v === null) return;
+                          const catId = v === "—" ? null : getCategoryId(v);
                           updateMutation.mutate({
                             id: item.id,
-                            note: noteValue || null,
+                            categoryId: catId,
+                            categoryOverride: true,
                           });
-                          setEditingNote(null);
                         }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
+                      >
+                        <SelectTrigger className="h-7 text-xs border-none shadow-none px-1">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="—">—</SelectItem>
+                          {categoriesQuery.data?.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.name}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+
+                    {/* Split ratio */}
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {item.splitRatioOverride &&
+                          Math.abs(item.splitRatio - 0.5) > 0.001 && (
+                            <span
+                              className="text-blue-500 text-[10px]"
+                              title="Override"
+                            >
+                              *
+                            </span>
+                          )}
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={Math.round(item.splitRatio * 100)}
+                          onChange={(e) => {
+                            const pct = parseInt(e.target.value);
+                            if (!isNaN(pct) && pct >= 0 && pct <= 100) {
+                              updateMutation.mutate({
+                                id: item.id,
+                                splitRatio: pct / 100,
+                                splitRatioOverride: true,
+                              });
+                            }
+                          }}
+                          className="h-7 w-16 text-xs text-right px-1"
+                        />
+                      </div>
+                    </TableCell>
+
+                    {/* Note */}
+                    <TableCell>
+                      {editingNote === item.id ? (
+                        <Input
+                          value={noteValue}
+                          onChange={(e) => setNoteValue(e.target.value)}
+                          onBlur={() => {
                             updateMutation.mutate({
                               id: item.id,
                               note: noteValue || null,
                             });
                             setEditingNote(null);
-                          }
-                          if (e.key === "Escape") setEditingNote(null);
-                        }}
-                        className="h-7 text-xs px-1"
-                        autoFocus
-                      />
-                    ) : (
-                      <span
-                        className="text-xs text-muted-foreground cursor-pointer hover:text-foreground truncate block max-w-[150px]"
-                        onClick={() => {
-                          setEditingNote(item.id);
-                          setNoteValue(item.note ?? "");
-                        }}
-                      >
-                        {item.note || "Add note..."}
-                      </span>
-                    )}
-                  </TableCell>
-
-                  {/* Actions */}
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      {/* Save as Rule — show when item has a category assigned */}
-                      {item.categoryId && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
-                          title="Accept and save as global rule"
-                          onClick={() =>
-                            saveAsRuleMutation.mutate({
-                              lineItemId: item.id,
-                              description: item.description,
-                              userId: item.userId,
-                              categoryId: item.categoryId!,
-                            })
-                          }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              updateMutation.mutate({
+                                id: item.id,
+                                note: noteValue || null,
+                              });
+                              setEditingNote(null);
+                            }
+                            if (e.key === "Escape") setEditingNote(null);
+                          }}
+                          className="h-7 text-xs px-1"
+                          autoFocus
+                        />
+                      ) : (
+                        <span
+                          className="text-xs text-muted-foreground cursor-pointer hover:text-foreground truncate block max-w-[150px]"
+                          onClick={() => {
+                            setEditingNote(item.id);
+                            setNoteValue(item.note ?? "");
+                          }}
                         >
-                          Rule
-                        </Button>
+                          {item.note || "Add note..."}
+                        </span>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => deleteMutation.mutate({ id: item.id })}
-                      >
-                        x
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+                    </TableCell>
+
+                    {/* Actions */}
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {/* Rule indicators for items covered by rules */}
+                        {hasCoverage && (
+                          <div className="flex gap-0.5">
+                            {rules.statusRule && (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] px-1 py-0 border-green-400 text-green-600"
+                                title={`Status rule: "${rules.statusRule.pattern}" → ${rules.statusRule.action}`}
+                              >
+                                S
+                              </Badge>
+                            )}
+                            {rules.categoryRule && (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] px-1 py-0 border-purple-400 text-purple-600"
+                                title={`Category rule: "${rules.categoryRule.pattern}" → ${rules.categoryRule.categoryName}`}
+                              >
+                                C
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Save as Rule button — only for items not covered by rules */}
+                        {showRuleButton && !isEditing && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+                            title="Save as global rule"
+                            onClick={() => openRulePopover(item)}
+                          >
+                            + Rule
+                          </Button>
+                        )}
+
+                        {/* Inline rule editor */}
+                        {isEditing && (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              value={rulePattern}
+                              onChange={(e) => setRulePattern(e.target.value)}
+                              className="h-6 text-[10px] w-28 px-1"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") confirmSaveRule(item);
+                                if (e.key === "Escape") setRuleItemId(null);
+                              }}
+                              autoFocus
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1 text-[10px] text-green-600 hover:text-green-700"
+                              onClick={() => confirmSaveRule(item)}
+                              disabled={
+                                !rulePattern.trim() ||
+                                saveAsRuleMutation.isPending
+                              }
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1 text-[10px]"
+                              onClick={() => setRuleItemId(null)}
+                            >
+                              x
+                            </Button>
+                          </div>
+                        )}
+
+                        {!isEditing && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                            onClick={() =>
+                              deleteMutation.mutate({ id: item.id })
+                            }
+                          >
+                            x
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

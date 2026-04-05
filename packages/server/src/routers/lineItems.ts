@@ -195,19 +195,22 @@ export const lineItemsRouter = router({
     .input(
       z.object({
         lineItemId: z.number(),
-        description: z.string(),
+        pattern: z.string().min(1),
         userId: z.number(),
-        categoryId: z.number(),
+        categoryId: z.number().nullable(),
+        status: z.enum(["accepted", "rejected"]),
       })
     )
     .mutation(async ({ input }) => {
-      // Accept the line item
+      // Update the line item status
       db.update(lineItems)
-        .set({ status: "accepted", statusOverride: true })
+        .set({ status: input.status, statusOverride: true })
         .where(eq(lineItems.id, input.lineItemId))
         .run();
 
-      // Create accept rule for this user (if not exists)
+      const action = input.status === "accepted" ? "accept" : "reject";
+
+      // Create accept/reject rule for this user (if pattern not already covered)
       const existingAR = db
         .select()
         .from(acceptRejectRules)
@@ -215,37 +218,39 @@ export const lineItemsRouter = router({
         .find(
           (r) =>
             r.userId === input.userId &&
-            r.pattern.toLowerCase() === input.description.toLowerCase() &&
-            r.action === "accept"
+            r.pattern.toLowerCase() === input.pattern.toLowerCase() &&
+            r.action === action
         );
 
       if (!existingAR) {
         db.insert(acceptRejectRules)
           .values({
             userId: input.userId,
-            pattern: input.description,
-            action: "accept",
+            pattern: input.pattern,
+            action,
           })
           .run();
       }
 
-      // Create category rule (if not exists for this pattern)
-      const existingCat = db
-        .select()
-        .from(categoryRules)
-        .all()
-        .find(
-          (r) => r.pattern.toLowerCase() === input.description.toLowerCase()
-        );
+      // Create category rule only if a category is set
+      if (input.categoryId !== null) {
+        const existingCat = db
+          .select()
+          .from(categoryRules)
+          .all()
+          .find(
+            (r) => r.pattern.toLowerCase() === input.pattern.toLowerCase()
+          );
 
-      if (!existingCat) {
-        db.insert(categoryRules)
-          .values({
-            pattern: input.description,
-            categoryId: input.categoryId,
-            createdByUserId: input.userId,
-          })
-          .run();
+        if (!existingCat) {
+          db.insert(categoryRules)
+            .values({
+              pattern: input.pattern,
+              categoryId: input.categoryId,
+              createdByUserId: input.userId,
+            })
+            .run();
+        }
       }
 
       return { success: true };
