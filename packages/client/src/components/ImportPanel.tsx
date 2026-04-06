@@ -22,8 +22,10 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
 
   const [sourceType, setSourceType] = useState<"amex" | "td">("amex");
   const [userName, setUserName] = useState<string>("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
@@ -34,47 +36,71 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
   const uploadMutation = useMutation(
     trpc.statements.upload.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: trpc.lineItems.list.queryKey() });
-        queryClient.invalidateQueries({ queryKey: trpc.lineItems.countByMonth.queryKey() });
-        queryClient.invalidateQueries({ queryKey: trpc.statements.list.queryKey() });
-        setFile(null);
-        uploadMutation.reset();
-        if (fileInputRef.current) fileInputRef.current.value = "";
+        queryClient.invalidateQueries({
+          queryKey: trpc.lineItems.list.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: trpc.lineItems.countByMonth.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: trpc.statements.list.queryKey(),
+        });
       },
     })
   );
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile?.name.endsWith(".csv")) {
-      setFile(droppedFile);
-      uploadMutation.reset();
+  const addFiles = (newFiles: FileList | File[]) => {
+    const csvFiles = Array.from(newFiles).filter((f) =>
+      f.name.endsWith(".csv")
+    );
+    if (csvFiles.length > 0) {
+      setFiles((prev) => [...prev, ...csvFiles]);
     }
-  }, [uploadMutation]);
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      addFiles(e.dataTransfer.files);
+    },
+    []
+  );
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected) {
-      setFile(selected);
-      uploadMutation.reset();
+    if (e.target.files) {
+      addFiles(e.target.files);
     }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleUpload = async () => {
     const userId = getUserId(userName);
-    if (!file || !userId) return;
+    if (files.length === 0 || !userId) return;
 
-    const content = await file.text();
-    uploadMutation.mutate({
-      userId,
-      sourceType,
-      fileName: file.name,
-      content,
-      periodMonth: month,
-      periodYear: year,
-    });
+    setImporting(true);
+    setProgress({ current: 0, total: files.length });
+
+    for (let i = 0; i < files.length; i++) {
+      setProgress({ current: i + 1, total: files.length });
+      const content = await files[i].text();
+      await uploadMutation.mutateAsync({
+        userId,
+        sourceType,
+        fileName: files[i].name,
+        content,
+        periodMonth: month,
+        periodYear: year,
+      });
+    }
+
+    setFiles([]);
+    setImporting(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
@@ -88,7 +114,9 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
           <Label className="text-xs mb-1">Source</Label>
           <Select
             value={sourceType}
-            onValueChange={(v) => { if (v) setSourceType(v as "amex" | "td"); }}
+            onValueChange={(v) => {
+              if (v) setSourceType(v as "amex" | "td");
+            }}
           >
             <SelectTrigger className="h-8 text-sm">
               <SelectValue />
@@ -102,7 +130,12 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
 
         <div>
           <Label className="text-xs mb-1">User</Label>
-          <Select value={userName} onValueChange={(v) => { if (v) setUserName(v); }}>
+          <Select
+            value={userName}
+            onValueChange={(v) => {
+              if (v) setUserName(v);
+            }}
+          >
             <SelectTrigger className="h-8 text-sm">
               <SelectValue placeholder="Select user" />
             </SelectTrigger>
@@ -130,30 +163,36 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
       >
-        {file ? (
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">{file.name}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setFile(null);
-                uploadMutation.reset();
-                if (fileInputRef.current) fileInputRef.current.value = "";
-              }}
-              className="h-6 text-xs"
-            >
-              Clear
-            </Button>
+        {files.length > 0 ? (
+          <div className="space-y-1 text-left">
+            {files.map((file, i) => (
+              <div
+                key={`${file.name}-${i}`}
+                className="flex items-center justify-between text-xs"
+              >
+                <span className="text-muted-foreground truncate">
+                  {file.name}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeFile(i)}
+                  className="h-5 px-1 text-[10px] text-muted-foreground hover:text-destructive"
+                >
+                  x
+                </Button>
+              </div>
+            ))}
           </div>
         ) : (
           <label className="cursor-pointer text-muted-foreground">
-            Drop CSV here or{" "}
+            Drop CSV(s) here or{" "}
             <span className="text-primary underline">browse</span>
             <input
               ref={fileInputRef}
               type="file"
               accept=".csv"
+              multiple
               className="hidden"
               onChange={handleFileSelect}
             />
@@ -161,12 +200,33 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
         )}
       </div>
 
+      {files.length > 0 && (
+        <div className="flex items-center justify-between mt-2">
+          <span className="text-xs text-muted-foreground">
+            {files.length} file{files.length > 1 ? "s" : ""}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs"
+            onClick={() => {
+              setFiles([]);
+              if (fileInputRef.current) fileInputRef.current.value = "";
+            }}
+          >
+            Clear all
+          </Button>
+        </div>
+      )}
+
       <Button
         className="mt-3 w-full h-8 text-sm"
         onClick={handleUpload}
-        disabled={!file || !userName || uploadMutation.isPending}
+        disabled={files.length === 0 || !userName || importing}
       >
-        {uploadMutation.isPending ? "Importing..." : "Import"}
+        {importing
+          ? `Importing ${progress.current}/${progress.total}...`
+          : `Import${files.length > 1 ? ` (${files.length} files)` : ""}`}
       </Button>
 
       {uploadMutation.isError && (
