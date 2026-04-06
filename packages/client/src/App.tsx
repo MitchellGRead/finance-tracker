@@ -4,7 +4,6 @@ import { Button } from "./components/ui/button";
 import { useMonthPicker } from "./hooks/useMonthPicker";
 import { ImportPanel } from "./components/ImportPanel";
 import { UserManager } from "./components/UserManager";
-import { CategoryManager } from "./components/CategoryManager";
 import { CategoryRulesPanel } from "./components/CategoryRulesPanel";
 import { AcceptRejectRulesPanel } from "./components/AcceptRejectRulesPanel";
 import { MonthCalendar } from "./components/MonthCalendar";
@@ -56,7 +55,7 @@ export function App() {
     <div className="min-h-screen bg-background">
       {/* Top bar */}
       <header className="border-b bg-card px-6 py-3">
-        <div className="mx-auto max-w-7xl flex items-center justify-between">
+        <div className="mx-auto flex items-center justify-between">
           <h1 className="text-lg font-bold text-foreground">
             Finance Tracker
           </h1>
@@ -88,27 +87,30 @@ export function App() {
       </header>
 
       {/* Main content */}
-      <div className="mx-auto max-w-7xl px-6 py-4">
+      <div className="mx-auto px-6 py-4">
         <div className="flex gap-4">
-          {/* Sidebar */}
-          <aside className="w-[280px] shrink-0 space-y-4">
-            <MonthCalendar
-              month={month}
-              year={year}
-              onSelect={(m, y) => {
-                setMonth(m);
-                setYear(y);
-              }}
-              onYearChange={setYear}
-            />
-            <UserManager />
-            <ImportPanel month={month} year={year} />
-            <CategoryManager />
+          {/* Left panel — ~1/3 width */}
+          <aside className="w-1/3 shrink-0 space-y-4">
+            {/* Top row: Month, Users, Import */}
+            <div className="grid grid-cols-3 gap-3">
+              <MonthCalendar
+                month={month}
+                year={year}
+                onSelect={(m, y) => {
+                  setMonth(m);
+                  setYear(y);
+                }}
+                onYearChange={setYear}
+              />
+              <UserManager />
+              <ImportPanel month={month} year={year} />
+            </div>
+            {/* Rules panels */}
             <CategoryRulesPanel />
             <AcceptRejectRulesPanel />
           </aside>
 
-          {/* Main area */}
+          {/* Line items table — remaining ~2/3 */}
           <main className="flex-1 min-w-0">
             <LineItemsTable month={month} year={year} />
           </main>

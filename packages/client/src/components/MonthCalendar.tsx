@@ -28,7 +28,7 @@ export function MonthCalendar({
   const counts = countsQuery.data ?? {};
 
   return (
-    <div className="w-[260px]">
+    <div className="w-full">
       {/* Year navigation */}
       <div className="flex items-center justify-between mb-2">
         <Button

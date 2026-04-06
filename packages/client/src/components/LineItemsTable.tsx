@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { CategoryPicker } from "./CategoryPicker";
 import {
   Table,
   TableBody,
@@ -36,8 +37,7 @@ interface MatchingRules {
 function findMatchingRules(
   description: string,
   catRules: Array<{ pattern: string; categoryName: string | null }>,
-  arRules: Array<{ pattern: string; action: string; userId: number }>,
-  userId: number
+  arRules: Array<{ pattern: string; action: string }>
 ): MatchingRules {
   const descLower = description.toLowerCase();
 
@@ -54,12 +54,11 @@ function findMatchingRules(
     }
   }
 
-  // Find best status rule for this user (longest match)
+  // Find best status rule (global, longest match)
   let bestAR: (typeof arRules)[number] | null = null;
   let bestARLen = 0;
   for (const rule of arRules) {
     if (
-      rule.userId === userId &&
       descLower.includes(rule.pattern.toLowerCase()) &&
       rule.pattern.length > bestARLen
     ) {
@@ -106,7 +105,6 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const [rulePattern, setRulePattern] = useState("");
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
-  const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
   const lineItemsQuery = useQuery(
     trpc.lineItems.list.queryOptions({ month, year })
   );
@@ -157,9 +155,6 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
   const getUserName = (userId: number) =>
     usersQuery.data?.find((u) => u.id === userId)?.name ?? "Unknown";
-
-  const getCategoryId = (name: string) =>
-    categoriesQuery.data?.find((c) => c.name === name)?.id ?? null;
 
   const filteredItems = items.filter((item) => {
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
@@ -330,8 +325,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                 const rules = findMatchingRules(
                   item.description,
                   catRules,
-                  arRules,
-                  item.userId
+                  arRules
                 );
                 const hasCoverage =
                   rules.categoryRule !== null || rules.statusRule !== null;
@@ -399,35 +393,21 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
                     {/* Amount */}
                     <TableCell className="text-right text-sm tabular-nums">
-                      {formatCurrency(item.amount)}
+                      {formatCurrency(item.isCredit ? -item.amount : item.amount)}
                     </TableCell>
 
                     {/* Category */}
                     <TableCell>
-                      <Select
-                        value={item.categoryName ?? "—"}
-                        onValueChange={(v) => {
-                          if (v === null) return;
-                          const catId = v === "—" ? null : getCategoryId(v);
+                      <CategoryPicker
+                        currentCategoryName={item.categoryName}
+                        onSelect={(catId) => {
                           updateMutation.mutate({
                             id: item.id,
                             categoryId: catId,
                             categoryOverride: true,
                           });
                         }}
-                      >
-                        <SelectTrigger className="h-7 text-xs border-none shadow-none px-1">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="—">—</SelectItem>
-                          {categoriesQuery.data?.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.name}>
-                              {cat.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     </TableCell>
 
                     {/* Split ratio */}

@@ -147,18 +147,12 @@ export const lineItemsRouter = router({
           .run();
       }
 
-      // Re-apply rules to these items grouped by user
-      const byUser = new Map<number, number[]>();
-      for (const item of overriddenItems) {
-        const ids = byUser.get(item.userId) ?? [];
-        ids.push(item.id);
-        byUser.set(item.userId, ids);
-      }
-
+      // Re-apply rules to these items
+      const ids = overriddenItems.map((item) => item.id);
       let rulesApplied = 0;
-      for (const [userId, ids] of byUser) {
-        const result = applyRulesToLineItems(ids, userId);
-        rulesApplied += result.applied;
+      if (ids.length > 0) {
+        const result = applyRulesToLineItems(ids);
+        rulesApplied = result.applied;
       }
 
       return { cleared: overriddenItems.length, rulesApplied };

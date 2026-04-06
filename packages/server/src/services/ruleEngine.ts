@@ -51,16 +51,11 @@ function findBestMatch<T extends { pattern: string; createdAt: string }>(
  * Called after import to auto-categorize and auto-accept/reject.
  */
 export function applyRulesToLineItems(
-  lineItemIds: number[],
-  userId: number
+  lineItemIds: number[]
 ): { applied: number; conflicts: number } {
-  // Fetch all rules
+  // Fetch all rules (accept/reject rules are global — applied to all users)
   const allCategoryRules = db.select().from(categoryRules).all();
-  const userAcceptRejectRules = db
-    .select()
-    .from(acceptRejectRules)
-    .where(eq(acceptRejectRules.userId, userId))
-    .all();
+  const allAcceptRejectRules = db.select().from(acceptRejectRules).all();
   const allCategories = db.select().from(categories).all();
 
   // Fetch the line items to process
@@ -76,8 +71,8 @@ export function applyRulesToLineItems(
   for (const item of items) {
     const updates: Record<string, unknown> = {};
 
-    // 1. Accept/Reject rules (per-user, longest match)
-    const arResult = findBestMatch(item.description, userAcceptRejectRules);
+    // 1. Accept/Reject rules (global, longest match)
+    const arResult = findBestMatch(item.description, allAcceptRejectRules);
     if (arResult.match) {
       updates.status = arResult.match.action === "accept" ? "accepted" : "rejected";
       applied++;
@@ -133,22 +128,7 @@ export function reapplyRulesForPeriod(
       !item.categoryOverride
   );
 
-  // Group by user and apply rules per user
-  const byUser = new Map<number, number[]>();
-  for (const item of periodItems) {
-    const ids = byUser.get(item.userId) ?? [];
-    ids.push(item.id);
-    byUser.set(item.userId, ids);
-  }
-
-  let totalApplied = 0;
-  let totalConflicts = 0;
-
-  for (const [userId, ids] of byUser) {
-    const result = applyRulesToLineItems(ids, userId);
-    totalApplied += result.applied;
-    totalConflicts += result.conflicts;
-  }
-
-  return { applied: totalApplied, conflicts: totalConflicts };
+  const ids = periodItems.map((item) => item.id);
+  if (ids.length === 0) return { applied: 0, conflicts: 0 };
+  return applyRulesToLineItems(ids);
 }

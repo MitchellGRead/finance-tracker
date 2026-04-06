@@ -87,7 +87,7 @@ export const statementsRouter = router({
           .all();
 
         const insertedIds = inserted.map((row) => row.id);
-        const ruleResult = applyRulesToLineItems(insertedIds, input.userId);
+        const ruleResult = applyRulesToLineItems(insertedIds);
         rulesApplied = ruleResult.applied;
         ruleConflicts = ruleResult.conflicts;
       }

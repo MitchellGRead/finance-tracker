@@ -26,8 +26,16 @@ const server = serve({ fetch: app.fetch, port });
 
 // Graceful shutdown — release the port when the process is killed
 const shutdown = () => {
-  server.close();
-  process.exit(0);
+  // closeAllConnections is available in Node 18.2+ but not in all type defs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (typeof (server as any).closeAllConnections === "function") {
+    (server as any).closeAllConnections();
+  }
+  server.close(() => {
+    process.exit(0);
+  });
+  // Fallback in case close callback doesn't fire
+  setTimeout(() => process.exit(0), 1000);
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
