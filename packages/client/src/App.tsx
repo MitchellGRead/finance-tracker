@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTRPC } from "./lib/trpc";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "./components/ui/button";
@@ -9,9 +10,13 @@ import { AcceptRejectRulesPanel } from "./components/AcceptRejectRulesPanel";
 import { MonthCalendar } from "./components/MonthCalendar";
 import { LineItemsTable } from "./components/LineItemsTable";
 import { AddLineItem } from "./components/AddLineItem";
+import { ReportsPage } from "./components/ReportsPage";
+
+type Page = "workspace" | "reports";
 
 export function App() {
   const { month, year, label, setMonth, setYear } = useMonthPicker();
+  const [page, setPage] = useState<Page>("workspace");
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -45,8 +50,26 @@ export function App() {
     })
   );
 
+  const generateMutation = useMutation(
+    trpc.reports.generate.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: trpc.reports.list.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: trpc.reports.get.queryKey(),
+        });
+        setPage("reports");
+      },
+    })
+  );
+
   const handleClearMonth = () => {
-    if (window.confirm(`Clear all line items for ${label}? This cannot be undone.`)) {
+    if (
+      window.confirm(
+        `Clear all line items for ${label}? This cannot be undone.`
+      )
+    ) {
       clearMonthMutation.mutate({ month, year });
     }
   };
@@ -56,66 +79,107 @@ export function App() {
       {/* Top bar */}
       <header className="border-b bg-card px-6 py-3">
         <div className="mx-auto flex items-center justify-between">
-          <h1 className="text-lg font-bold text-foreground">
-            Finance Tracker
-          </h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-lg font-bold text-foreground">
+              Finance Tracker
+            </h1>
+            <div className="flex gap-1">
+              <Button
+                variant={page === "workspace" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setPage("workspace")}
+              >
+                Workspace
+              </Button>
+              <Button
+                variant={page === "reports" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setPage("reports")}
+              >
+                Reports
+              </Button>
+            </div>
+          </div>
 
           <span className="text-sm font-medium text-foreground">{label}</span>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-sm"
-              onClick={() => reapplyMutation.mutate({ month, year })}
-              disabled={reapplyMutation.isPending}
-            >
-              {reapplyMutation.isPending ? "Applying..." : "Re-apply Rules"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-sm text-destructive hover:text-destructive"
-              onClick={handleClearMonth}
-              disabled={clearMonthMutation.isPending}
-            >
-              Clear Month
-            </Button>
-            <AddLineItem month={month} year={year} />
+            {page === "workspace" && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-sm"
+                  onClick={() => generateMutation.mutate({ month, year })}
+                  disabled={generateMutation.isPending}
+                >
+                  {generateMutation.isPending
+                    ? "Generating..."
+                    : "Generate Report"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-sm"
+                  onClick={() => reapplyMutation.mutate({ month, year })}
+                  disabled={reapplyMutation.isPending}
+                >
+                  {reapplyMutation.isPending ? "Applying..." : "Re-apply Rules"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-sm text-destructive hover:text-destructive"
+                  onClick={handleClearMonth}
+                  disabled={clearMonthMutation.isPending}
+                >
+                  Clear Month
+                </Button>
+                <AddLineItem month={month} year={year} />
+              </>
+            )}
           </div>
         </div>
       </header>
 
       {/* Main content */}
-      <div className="flex-1 min-h-0 px-6 py-4">
-        <div className="flex gap-4 h-full">
-          {/* Left panel — ~1/3 width */}
-          <aside className="w-1/3 shrink-0 space-y-4">
-            {/* Top row: Month, Users, Import */}
-            <div className="grid grid-cols-3 gap-3">
-              <MonthCalendar
-                month={month}
-                year={year}
-                onSelect={(m, y) => {
-                  setMonth(m);
-                  setYear(y);
-                }}
-                onYearChange={setYear}
-              />
-              <UserManager />
-              <ImportPanel month={month} year={year} />
-            </div>
-            {/* Rules panels */}
-            <CategoryRulesPanel />
-            <AcceptRejectRulesPanel />
-          </aside>
+      {page === "workspace" ? (
+        <div className="flex-1 min-h-0 px-6 py-4">
+          <div className="flex gap-4 h-full">
+            {/* Left panel — ~1/3 width */}
+            <aside className="w-1/3 shrink-0 space-y-4">
+              {/* Top row: Month, Users, Import */}
+              <div className="grid grid-cols-3 gap-3">
+                <MonthCalendar
+                  month={month}
+                  year={year}
+                  onSelect={(m, y) => {
+                    setMonth(m);
+                    setYear(y);
+                  }}
+                  onYearChange={setYear}
+                />
+                <UserManager />
+                <ImportPanel month={month} year={year} />
+              </div>
+              {/* Rules panels */}
+              <CategoryRulesPanel />
+              <AcceptRejectRulesPanel />
+            </aside>
 
-          {/* Line items table — remaining ~2/3 */}
-          <main className="flex-1 min-w-0 flex flex-col">
-            <LineItemsTable month={month} year={year} />
-          </main>
+            {/* Line items table — remaining ~2/3 */}
+            <main className="flex-1 min-w-0 flex flex-col">
+              <LineItemsTable month={month} year={year} />
+            </main>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+          <ReportsPage />
+        </div>
+      )}
     </div>
   );
 }
