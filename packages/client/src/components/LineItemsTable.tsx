@@ -143,6 +143,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     trpc.lineItems.list.queryOptions({ month, year })
   );
   const rulesQuery = useQuery(trpc.rules.list.queryOptions());
+  const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({
@@ -364,15 +365,30 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                   <SelectItem value="pending">Pending</SelectItem>
                 </SelectContent>
               </Select>
-              <CategoryPicker
-                currentCategoryName={null}
-                onSelect={(catId) =>
-                  bulkCategoryMutation.mutate({
-                    ids: selectedArray,
-                    categoryId: catId,
-                  })
-                }
-              />
+              <Select
+                value=""
+                onValueChange={(v) => {
+                  if (v) {
+                    const catId = v === "__none__" ? null : parseInt(v);
+                    bulkCategoryMutation.mutate({
+                      ids: selectedArray,
+                      categoryId: catId,
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs w-[130px]">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No category</SelectItem>
+                  {categoriesQuery.data?.map((cat) => (
+                    <SelectItem key={cat.id} value={String(cat.id)}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="outline"
                 size="sm"
