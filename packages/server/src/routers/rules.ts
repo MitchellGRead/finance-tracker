@@ -83,6 +83,37 @@ export const rulesRouter = router({
     )
     .mutation(async ({ input }) => {
       const { id, ...updates } = input;
+
+      // Fetch current rule to merge with partial updates for validation
+      const current = await db
+        .select()
+        .from(rules)
+        .where(eq(rules.id, id))
+        .get();
+      if (!current) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Rule not found" });
+      }
+
+      const merged = { ...current, ...updates };
+      if (merged.ruleType === "personal" && merged.userId == null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Personal rules require a userId",
+        });
+      }
+      if (merged.ruleType === "split" && merged.userId != null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Split rules must not have a userId",
+        });
+      }
+      if (merged.action == null && merged.categoryId == null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Rule must set at least an action or a category",
+        });
+      }
+
       return db
         .update(rules)
         .set(updates)
