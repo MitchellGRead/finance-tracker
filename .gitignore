@@ -7,3 +7,4 @@ dist/
 .env
 .env.local
 *.tsbuildinfo
+test/test_data/
