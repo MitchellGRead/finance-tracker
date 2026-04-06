@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 
 function getSearchParams() {
   return new URLSearchParams(window.location.search);
@@ -33,27 +33,36 @@ export function useMonthPicker() {
     initialYear >= 2000 && initialYear <= 2100 ? initialYear : defaultYear
   );
 
-  const setMonth = useCallback(
-    (m: number | ((prev: number) => number)) => {
-      setMonthState((prev) => {
-        const next = typeof m === "function" ? m(prev) : m;
-        updateURL(next, year);
-        return next;
-      });
-    },
-    [year]
-  );
+  // Use refs to avoid stale closures when setMonth/setYear are called separately
+  const monthRef = useRef(month);
+  const yearRef = useRef(year);
 
-  const setYear = useCallback(
-    (y: number | ((prev: number) => number)) => {
-      setYearState((prev) => {
-        const next = typeof y === "function" ? y(prev) : y;
-        updateURL(month, next);
-        return next;
-      });
-    },
-    [month]
-  );
+  const setMonth = useCallback((m: number | ((prev: number) => number)) => {
+    setMonthState((prev) => {
+      const next = typeof m === "function" ? m(prev) : m;
+      monthRef.current = next;
+      updateURL(next, yearRef.current);
+      return next;
+    });
+  }, []);
+
+  const setYear = useCallback((y: number | ((prev: number) => number)) => {
+    setYearState((prev) => {
+      const next = typeof y === "function" ? y(prev) : y;
+      yearRef.current = next;
+      updateURL(monthRef.current, next);
+      return next;
+    });
+  }, []);
+
+  // Atomic update for both month and year (avoids stale closure issues)
+  const setMonthAndYear = useCallback((m: number, y: number) => {
+    setMonthState(m);
+    setYearState(y);
+    monthRef.current = m;
+    yearRef.current = y;
+    updateURL(m, y);
+  }, []);
 
   const label = new Date(year, month - 1).toLocaleDateString("en-US", {
     month: "long",
@@ -62,31 +71,19 @@ export function useMonthPicker() {
 
   const prev = () => {
     if (month === 1) {
-      const newMonth = 12;
-      const newYear = year - 1;
-      setMonthState(newMonth);
-      setYearState(newYear);
-      updateURL(newMonth, newYear);
+      setMonthAndYear(12, year - 1);
     } else {
-      const newMonth = month - 1;
-      setMonthState(newMonth);
-      updateURL(newMonth, year);
+      setMonthAndYear(month - 1, year);
     }
   };
 
   const next = () => {
     if (month === 12) {
-      const newMonth = 1;
-      const newYear = year + 1;
-      setMonthState(newMonth);
-      setYearState(newYear);
-      updateURL(newMonth, newYear);
+      setMonthAndYear(1, year + 1);
     } else {
-      const newMonth = month + 1;
-      setMonthState(newMonth);
-      updateURL(newMonth, year);
+      setMonthAndYear(month + 1, year);
     }
   };
 
-  return { month, year, label, prev, next, setMonth, setYear };
+  return { month, year, label, prev, next, setMonth, setYear, setMonthAndYear };
 }

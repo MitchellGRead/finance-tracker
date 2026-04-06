@@ -15,7 +15,7 @@ import { ReportsPage } from "./components/ReportsPage";
 type Page = "workspace" | "reports";
 
 export function App() {
-  const { month, year, label, setMonth, setYear } = useMonthPicker();
+  const { month, year, label, setYear, setMonthAndYear } = useMonthPicker();
   const [page, setPage] = useState<Page>("workspace");
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -155,10 +155,7 @@ export function App() {
                 <MonthCalendar
                   month={month}
                   year={year}
-                  onSelect={(m, y) => {
-                    setMonth(m);
-                    setYear(y);
-                  }}
+                  onSelect={setMonthAndYear}
                   onYearChange={setYear}
                 />
                 <UserManager />

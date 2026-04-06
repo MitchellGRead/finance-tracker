@@ -41,11 +41,13 @@ export const lineItemsRouter = router({
           note: lineItems.note,
           isManual: lineItems.isManual,
           isCredit: lineItems.isCredit,
+          sourceType: statements.sourceType,
           createdAt: lineItems.createdAt,
           updatedAt: lineItems.updatedAt,
         })
         .from(lineItems)
         .leftJoin(categories, eq(lineItems.categoryId, categories.id))
+        .leftJoin(statements, eq(lineItems.statementId, statements.id))
         .orderBy(desc(lineItems.date));
 
       return allItems.filter((item) => {

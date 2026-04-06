@@ -368,14 +368,21 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                         </Badge>
                       )}
                       {item.description}
-                      {item.isManual && (
+                      {item.isManual ? (
                         <Badge
                           variant="outline"
                           className="ml-1.5 text-[10px] px-1 py-0"
                         >
                           Manual
                         </Badge>
-                      )}
+                      ) : item.sourceType ? (
+                        <Badge
+                          variant="outline"
+                          className="ml-1.5 text-[10px] px-1 py-0 text-muted-foreground"
+                        >
+                          {item.sourceType === "amex" ? "Amex" : "TD"}
+                        </Badge>
+                      ) : null}
                       {realOverride && (
                         <Badge
                           variant="outline"

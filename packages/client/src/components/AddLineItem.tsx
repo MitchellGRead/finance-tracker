@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "./ui/button";
@@ -35,17 +35,30 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
     `${year}-${String(month).padStart(2, "0")}-01`
   );
   const [note, setNote] = useState("");
+  const [categoryName, setCategoryName] = useState<string>("");
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
+  const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
 
   const getUserId = (name: string) =>
     usersQuery.data?.find((u) => u.name === name)?.id;
+
+  const getCategoryId = (name: string) =>
+    categoriesQuery.data?.find((c) => c.name === name)?.id ?? null;
+
+  // Sync date default when month/year props change
+  useEffect(() => {
+    setDate(`${year}-${String(month).padStart(2, "0")}-01`);
+  }, [month, year]);
 
   const createMutation = useMutation(
     trpc.lineItems.create.mutationOptions({
       onSuccess: () => {
         queryClient.invalidateQueries({
           queryKey: trpc.lineItems.list.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: trpc.lineItems.countByMonth.queryKey(),
         });
         setOpen(false);
         resetForm();
@@ -58,6 +71,7 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
     setAmount("");
     setNote("");
     setUserName("");
+    setCategoryName("");
   };
 
   const handleSubmit = () => {
@@ -68,6 +82,7 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
       date,
       description,
       amount: parseFloat(amount),
+      categoryId: categoryName ? getCategoryId(categoryName) : undefined,
       note: note || null,
     });
   };
@@ -86,7 +101,12 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
         <div className="grid gap-3 py-2">
           <div>
             <Label className="text-xs">User</Label>
-            <Select value={userName} onValueChange={(v) => { if (v) setUserName(v); }}>
+            <Select
+              value={userName}
+              onValueChange={(v) => {
+                if (v) setUserName(v);
+              }}
+            >
               <SelectTrigger className="h-8 text-sm mt-1">
                 <SelectValue placeholder="Select user" />
               </SelectTrigger>
@@ -130,6 +150,27 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
             />
           </div>
           <div>
+            <Label className="text-xs">Category (optional)</Label>
+            <Select
+              value={categoryName}
+              onValueChange={(v) => {
+                if (v) setCategoryName(v === "none" ? "" : v);
+              }}
+            >
+              <SelectTrigger className="h-8 text-sm mt-1">
+                <SelectValue placeholder="No category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No category</SelectItem>
+                {categoriesQuery.data?.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.name}>
+                    {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <Label className="text-xs">Note (optional)</Label>
             <Input
               value={note}
@@ -139,7 +180,9 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={!userName || !description || !amount || createMutation.isPending}
+            disabled={
+              !userName || !description || !amount || createMutation.isPending
+            }
             className="h-8 text-sm"
           >
             {createMutation.isPending ? "Adding..." : "Add Item"}
