@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { categories } from "../db/schema";
+import { categories, lineItems } from "../db/schema";
 
 export const categoriesRouter = router({
   list: publicProcedure.query(async () => {
@@ -50,4 +50,16 @@ export const categoriesRouter = router({
     .mutation(async ({ input }) => {
       return db.delete(categories).where(eq(categories.id, input.id)).run();
     }),
+
+  usageCounts: publicProcedure.query(async () => {
+    return db
+      .select({
+        categoryId: lineItems.categoryId,
+        count: sql<number>`count(*)`.as("count"),
+      })
+      .from(lineItems)
+      .where(sql`${lineItems.categoryId} is not null`)
+      .groupBy(lineItems.categoryId)
+      .all();
+  }),
 });
