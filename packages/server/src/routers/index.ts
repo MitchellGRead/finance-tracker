@@ -3,8 +3,7 @@ import { usersRouter } from "./users";
 import { statementsRouter } from "./statements";
 import { lineItemsRouter } from "./lineItems";
 import { categoriesRouter } from "./categories";
-import { categoryRulesRouter } from "./categoryRules";
-import { acceptRejectRulesRouter } from "./acceptRejectRules";
+import { rulesRouter } from "./rules";
 import { reportsRouter } from "./reports";
 
 export const appRouter = router({
@@ -12,8 +11,7 @@ export const appRouter = router({
   statements: statementsRouter,
   lineItems: lineItemsRouter,
   categories: categoriesRouter,
-  categoryRules: categoryRulesRouter,
-  acceptRejectRules: acceptRejectRulesRouter,
+  rules: rulesRouter,
   reports: reportsRouter,
 });
 

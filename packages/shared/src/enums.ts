@@ -12,16 +12,14 @@ export const LineItemStatus = {
 export type LineItemStatus =
   (typeof LineItemStatus)[keyof typeof LineItemStatus];
 
-export const AcceptRejectAction = {
+export const RuleAction = {
   ACCEPT: "accept",
   REJECT: "reject",
 } as const;
-export type AcceptRejectAction =
-  (typeof AcceptRejectAction)[keyof typeof AcceptRejectAction];
+export type RuleAction = (typeof RuleAction)[keyof typeof RuleAction];
 
-export const CategoryRuleType = {
+export const RuleType = {
   SPLIT: "split",
   PERSONAL: "personal",
 } as const;
-export type CategoryRuleType =
-  (typeof CategoryRuleType)[keyof typeof CategoryRuleType];
+export type RuleType = (typeof RuleType)[keyof typeof RuleType];

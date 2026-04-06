@@ -66,27 +66,16 @@ export const lineItems = sqliteTable("line_items", {
   ...timestamps,
 });
 
-export const categoryRules = sqliteTable("category_rules", {
+export const rules = sqliteTable("rules", {
   id: int("id").primaryKey({ autoIncrement: true }),
   pattern: text("pattern").notNull(),
-  categoryId: int("category_id")
-    .notNull()
-    .references(() => categories.id),
+  ruleType: text("rule_type").notNull().default("split"), // 'split' | 'personal'
+  userId: int("user_id").references(() => users.id), // null for split, required for personal
+  action: text("action"), // 'accept' | 'reject' | null
+  categoryId: int("category_id").references(() => categories.id), // nullable
   createdByUserId: int("created_by_user_id")
     .notNull()
     .references(() => users.id),
-  ruleType: text("rule_type").notNull().default("split"), // 'split' | 'personal'
-  userId: int("user_id").references(() => users.id), // null for split, required for personal
-  ...timestamps,
-});
-
-export const acceptRejectRules = sqliteTable("accept_reject_rules", {
-  id: int("id").primaryKey({ autoIncrement: true }),
-  userId: int("user_id")
-    .notNull()
-    .references(() => users.id),
-  pattern: text("pattern").notNull(),
-  action: text("action").notNull(), // 'accept' | 'reject'
   ...timestamps,
 });
 

@@ -2,13 +2,7 @@ import { z } from "zod";
 import { eq, desc, sql } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import {
-  lineItems,
-  categories,
-  statements,
-  categoryRules,
-  acceptRejectRules,
-} from "../db/schema";
+import { lineItems, categories, statements, rules } from "../db/schema";
 import {
   GLOBAL_DEFAULT_SPLIT_RATIO,
   PERSONAL_SPLIT_RATIO,
@@ -203,8 +197,9 @@ export const lineItemsRouter = router({
     )
     .mutation(async ({ input }) => {
       const isPersonal = input.ruleType === "personal";
+      const action = input.status === "accepted" ? "accept" : "reject";
 
-      // Update the line item status (and split ratio for personal rules)
+      // Update the line item
       db.update(lineItems)
         .set({
           status: input.status,
@@ -217,54 +212,39 @@ export const lineItemsRouter = router({
         .where(eq(lineItems.id, input.lineItemId))
         .run();
 
-      const action = input.status === "accepted" ? "accept" : "reject";
-
-      // Create accept/reject rule for this user (if pattern not already covered)
-      const existingAR = db
+      // Find existing rule with same pattern + scope
+      const existing = db
         .select()
-        .from(acceptRejectRules)
+        .from(rules)
         .all()
         .find(
           (r) =>
-            r.userId === input.userId &&
             r.pattern.toLowerCase() === input.pattern.toLowerCase() &&
-            r.action === action
+            r.ruleType === input.ruleType &&
+            (input.ruleType === "split" || r.userId === input.userId)
         );
 
-      if (!existingAR) {
-        db.insert(acceptRejectRules)
-          .values({
-            userId: input.userId,
-            pattern: input.pattern,
+      if (existing) {
+        // Update existing rule with new action/category
+        db.update(rules)
+          .set({
             action,
+            ...(input.categoryId !== null && { categoryId: input.categoryId }),
+          })
+          .where(eq(rules.id, existing.id))
+          .run();
+      } else {
+        // Create new unified rule
+        db.insert(rules)
+          .values({
+            pattern: input.pattern,
+            ruleType: input.ruleType,
+            userId: isPersonal ? input.userId : null,
+            action,
+            categoryId: input.categoryId,
+            createdByUserId: input.userId,
           })
           .run();
-      }
-
-      // Create category rule only if a category is set
-      if (input.categoryId !== null) {
-        const existingCat = db
-          .select()
-          .from(categoryRules)
-          .all()
-          .find(
-            (r) =>
-              r.pattern.toLowerCase() === input.pattern.toLowerCase() &&
-              r.ruleType === input.ruleType &&
-              (input.ruleType === "split" || r.userId === input.userId)
-          );
-
-        if (!existingCat) {
-          db.insert(categoryRules)
-            .values({
-              pattern: input.pattern,
-              categoryId: input.categoryId,
-              createdByUserId: input.userId,
-              ruleType: input.ruleType,
-              userId: isPersonal ? input.userId : null,
-            })
-            .run();
-        }
       }
 
       return { success: true };

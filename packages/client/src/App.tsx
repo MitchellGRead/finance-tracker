@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useTRPC } from "./lib/trpc";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
 import { useMonthPicker } from "./hooks/useMonthPicker";
 import { ImportPanel } from "./components/ImportPanel";
 import { UserManager } from "./components/UserManager";
-import { CategoryRulesPanel } from "./components/CategoryRulesPanel";
-import { AcceptRejectRulesPanel } from "./components/AcceptRejectRulesPanel";
+import { RulesPanel } from "./components/RulesPanel";
 import { MonthCalendar } from "./components/MonthCalendar";
 import { LineItemsTable } from "./components/LineItemsTable";
 import { AddLineItem } from "./components/AddLineItem";
@@ -18,6 +18,7 @@ type Page = "workspace" | "reports";
 export function App() {
   const { month, year, label, setMonthAndYear } = useMonthPicker();
   const [page, setPage] = useState<Page>("workspace");
+  const [ruleSearch, setRuleSearch] = useState("");
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -163,8 +164,13 @@ export function App() {
                 <ImportPanel month={month} year={year} />
               </div>
               {/* Rules panels */}
-              <CategoryRulesPanel />
-              <AcceptRejectRulesPanel />
+              <Input
+                value={ruleSearch}
+                onChange={(e) => setRuleSearch(e.target.value)}
+                placeholder="Search rules by description..."
+                className="h-7 text-xs"
+              />
+              <RulesPanel searchFilter={ruleSearch} />
             </aside>
 
             {/* Line items table — remaining ~2/3 */}

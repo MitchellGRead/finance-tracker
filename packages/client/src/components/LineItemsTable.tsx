@@ -29,76 +29,56 @@ interface LineItemsTableProps {
 
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
 
-interface MatchingRules {
-  categoryRule: {
-    pattern: string;
-    categoryName: string | null;
-    isPersonal?: boolean;
-  } | null;
-  statusRule: { pattern: string; action: string } | null;
+interface MatchedRule {
+  pattern: string;
+  action: string | null;
+  categoryName: string | null;
+  isPersonal: boolean;
 }
 
-function findMatchingRules(
+function findMatchingRule(
   description: string,
-  catRules: Array<{
+  allRules: Array<{
     pattern: string;
-    categoryName: string | null;
     ruleType: string;
     userId: number | null;
+    action: string | null;
+    categoryName: string | null;
   }>,
-  arRules: Array<{ pattern: string; action: string }>,
-  itemUserId?: number
-): MatchingRules {
+  itemUserId: number
+): MatchedRule | null {
   const descLower = description.toLowerCase();
 
-  // Filter applicable category rules: all split rules + personal rules for this user
-  const applicableRules = catRules.filter(
+  // Filter applicable rules: split rules + personal rules for this user
+  const applicable = allRules.filter(
     (r) =>
       r.ruleType === "split" ||
       (r.ruleType === "personal" && r.userId === itemUserId)
   );
 
-  // Find best category rule (longest match, personal wins at equal length)
-  let bestCat: (typeof applicableRules)[number] | null = null;
-  let bestCatLen = 0;
-  let bestCatIsPersonal = false;
-  for (const rule of applicableRules) {
+  // Find best match (longest pattern, personal wins at equal length)
+  let best: (typeof applicable)[number] | null = null;
+  let bestLen = 0;
+  let bestIsPersonal = false;
+  for (const rule of applicable) {
     if (!descLower.includes(rule.pattern.toLowerCase())) continue;
     const isPersonal = rule.ruleType === "personal";
     if (
-      rule.pattern.length > bestCatLen ||
-      (rule.pattern.length === bestCatLen && isPersonal && !bestCatIsPersonal)
+      rule.pattern.length > bestLen ||
+      (rule.pattern.length === bestLen && isPersonal && !bestIsPersonal)
     ) {
-      bestCat = rule;
-      bestCatLen = rule.pattern.length;
-      bestCatIsPersonal = isPersonal;
+      best = rule;
+      bestLen = rule.pattern.length;
+      bestIsPersonal = isPersonal;
     }
   }
 
-  // Find best status rule (global, longest match)
-  let bestAR: (typeof arRules)[number] | null = null;
-  let bestARLen = 0;
-  for (const rule of arRules) {
-    if (
-      descLower.includes(rule.pattern.toLowerCase()) &&
-      rule.pattern.length > bestARLen
-    ) {
-      bestAR = rule;
-      bestARLen = rule.pattern.length;
-    }
-  }
-
+  if (!best) return null;
   return {
-    categoryRule: bestCat
-      ? {
-          pattern: bestCat.pattern,
-          categoryName: bestCat.categoryName,
-          isPersonal: bestCat.ruleType === "personal",
-        }
-      : null,
-    statusRule: bestAR
-      ? { pattern: bestAR.pattern, action: bestAR.action }
-      : null,
+    pattern: best.pattern,
+    action: best.action,
+    categoryName: best.categoryName,
+    isPersonal: best.ruleType === "personal",
   };
 }
 
@@ -114,6 +94,33 @@ function isRealOverride(item: {
   if (item.categoryOverride && item.categoryId !== null) return true;
   if (item.splitRatioOverride && Math.abs(item.splitRatio - 0.5) > 0.001)
     return true;
+  return false;
+}
+
+/**
+ * Check whether the item's current state diverges from what the matching
+ * rule would produce.
+ */
+function itemDivergesFromRule(
+  item: {
+    status: string;
+    categoryName: string | null;
+    splitRatio: number;
+  },
+  rule: MatchedRule
+): boolean {
+  if (rule.action) {
+    const expectedStatus =
+      rule.action === "accept" ? "accepted" : "rejected";
+    if (item.status !== expectedStatus) return true;
+  }
+
+  if (rule.categoryName) {
+    if (item.categoryName !== rule.categoryName) return true;
+  }
+
+  if (rule.isPersonal && item.splitRatio !== 1.0) return true;
+
   return false;
 }
 
@@ -134,8 +141,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const lineItemsQuery = useQuery(
     trpc.lineItems.list.queryOptions({ month, year })
   );
-  const catRulesQuery = useQuery(trpc.categoryRules.list.queryOptions());
-  const arRulesQuery = useQuery(trpc.acceptRejectRules.list.queryOptions());
+  const rulesQuery = useQuery(trpc.rules.list.queryOptions());
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({
@@ -165,10 +171,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
       onSuccess: () => {
         invalidateAll();
         queryClient.invalidateQueries({
-          queryKey: trpc.categoryRules.list.queryKey(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: trpc.acceptRejectRules.list.queryKey(),
+          queryKey: trpc.rules.list.queryKey(),
         });
         setRuleItemId(null);
       },
@@ -176,8 +179,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   );
 
   const items = lineItemsQuery.data ?? [];
-  const catRules = catRulesQuery.data ?? [];
-  const arRules = arRulesQuery.data ?? [];
+  const allRules = rulesQuery.data ?? [];
 
   const getUserName = (userId: number) =>
     usersQuery.data?.find((u) => u.id === userId)?.name ?? "Unknown";
@@ -351,18 +353,21 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               </TableRow>
             ) : (
               filteredItems.map((item) => {
-                const rules = findMatchingRules(
+                const matchedRule = findMatchingRule(
                   item.description,
-                  catRules,
-                  arRules,
+                  allRules,
                   item.userId
                 );
-                const hasCoverage =
-                  rules.categoryRule !== null || rules.statusRule !== null;
+                const hasCoverage = matchedRule !== null;
+                const diverges = hasCoverage
+                  ? itemDivergesFromRule(item, matchedRule)
+                  : false;
                 const showRuleButton =
-                  !hasCoverage && isModifiedFromDefault(item);
+                  (!hasCoverage && isModifiedFromDefault(item)) || diverges;
                 const isEditing = ruleItemId === item.id;
-                const realOverride = isRealOverride(item);
+                const realOverride = hasCoverage
+                  ? diverges && isRealOverride(item)
+                  : isRealOverride(item);
 
                 return (
                   <TableRow
@@ -552,44 +557,48 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                     {/* Actions */}
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        {/* Rule indicators for items covered by rules */}
-                        {hasCoverage && (
+                        {/* Rule indicators for items covered by a rule */}
+                        {matchedRule && (
                           <div className="flex gap-0.5">
-                            {rules.statusRule && (
+                            {matchedRule.action && (
                               <Badge
                                 variant="outline"
                                 className="text-[9px] px-1 py-0 border-green-400 text-green-600"
-                                title={`Status rule: "${rules.statusRule.pattern}" → ${rules.statusRule.action}`}
+                                title={`Rule: "${matchedRule.pattern}" → ${matchedRule.action}`}
                               >
                                 S
                               </Badge>
                             )}
-                            {rules.categoryRule && (
+                            {matchedRule.categoryName && (
                               <Badge
                                 variant="outline"
                                 className={`text-[9px] px-1 py-0 ${
-                                  rules.categoryRule.isPersonal
+                                  matchedRule.isPersonal
                                     ? "border-orange-400 text-orange-600"
                                     : "border-purple-400 text-purple-600"
                                 }`}
-                                title={`${rules.categoryRule.isPersonal ? "Personal" : "Split"} category rule: "${rules.categoryRule.pattern}" → ${rules.categoryRule.categoryName}`}
+                                title={`${matchedRule.isPersonal ? "Personal" : "Split"} rule: "${matchedRule.pattern}" → ${matchedRule.categoryName}`}
                               >
-                                {rules.categoryRule.isPersonal ? "P" : "C"}
+                                {matchedRule.isPersonal ? "P" : "C"}
                               </Badge>
                             )}
                           </div>
                         )}
 
-                        {/* Save as Rule button — only for items not covered by rules */}
+                        {/* Save/Update Rule button */}
                         {showRuleButton && !isEditing && (
                           <Button
                             variant="ghost"
                             size="sm"
                             className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
-                            title="Save as global rule"
+                            title={
+                              diverges
+                                ? "Item diverges from matched rule — save as new rule"
+                                : "Save as rule"
+                            }
                             onClick={() => openRulePopover(item)}
                           >
-                            + Rule
+                            {diverges ? "Update Rule" : "+ Rule"}
                           </Button>
                         )}
 
