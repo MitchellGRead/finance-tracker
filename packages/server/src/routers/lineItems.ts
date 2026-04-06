@@ -157,6 +157,64 @@ export const lineItemsRouter = router({
       return { cleared: overriddenItems.length, rulesApplied };
     }),
 
+  clearItemOverrides: publicProcedure
+    .input(z.object({ ids: z.array(z.number()) }))
+    .mutation(async ({ input }) => {
+      for (const id of input.ids) {
+        db.update(lineItems)
+          .set({
+            status: "pending",
+            statusOverride: false,
+            categoryId: null,
+            categoryOverride: false,
+            splitRatio: GLOBAL_DEFAULT_SPLIT_RATIO,
+            splitRatioOverride: false,
+          })
+          .where(eq(lineItems.id, id))
+          .run();
+      }
+
+      const result = input.ids.length > 0
+        ? applyRulesToLineItems(input.ids)
+        : { applied: 0, conflicts: 0 };
+
+      return { cleared: input.ids.length, rulesApplied: result.applied };
+    }),
+
+  bulkUpdateCategory: publicProcedure
+    .input(
+      z.object({
+        ids: z.array(z.number()),
+        categoryId: z.number().nullable(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      for (const id of input.ids) {
+        db.update(lineItems)
+          .set({ categoryId: input.categoryId, categoryOverride: true })
+          .where(eq(lineItems.id, id))
+          .run();
+      }
+      return { updated: input.ids.length };
+    }),
+
+  bulkUpdateSplitRatio: publicProcedure
+    .input(
+      z.object({
+        ids: z.array(z.number()),
+        splitRatio: z.number().min(0).max(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      for (const id of input.ids) {
+        db.update(lineItems)
+          .set({ splitRatio: input.splitRatio, splitRatioOverride: true })
+          .where(eq(lineItems.id, id))
+          .run();
+      }
+      return { updated: input.ids.length };
+    }),
+
   clearMonth: publicProcedure
     .input(
       z.object({

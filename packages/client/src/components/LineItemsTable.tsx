@@ -131,6 +131,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const [userFilter, setUserFilter] = useState<string>("all");
   const [editingNote, setEditingNote] = useState<number | null>(null);
   const [noteValue, setNoteValue] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   // Rule creation popover state
   const [ruleItemId, setRuleItemId] = useState<number | null>(null);
@@ -166,6 +167,30 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const clearOverridesMutation = useMutation(
     trpc.lineItems.clearOverrides.mutationOptions({ onSuccess: invalidateAll })
   );
+  const clearItemOverridesMutation = useMutation(
+    trpc.lineItems.clearItemOverrides.mutationOptions({
+      onSuccess: () => {
+        invalidateAll();
+        setSelectedIds(new Set());
+      },
+    })
+  );
+  const bulkCategoryMutation = useMutation(
+    trpc.lineItems.bulkUpdateCategory.mutationOptions({
+      onSuccess: () => {
+        invalidateAll();
+        setSelectedIds(new Set());
+      },
+    })
+  );
+  const bulkSplitMutation = useMutation(
+    trpc.lineItems.bulkUpdateSplitRatio.mutationOptions({
+      onSuccess: () => {
+        invalidateAll();
+        setSelectedIds(new Set());
+      },
+    })
+  );
   const saveAsRuleMutation = useMutation(
     trpc.lineItems.acceptAndCreateRules.mutationOptions({
       onSuccess: () => {
@@ -196,6 +221,27 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     .map((item) => item.id);
 
   const overrideCount = items.filter((item) => isRealOverride(item)).length;
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const filteredIds = filteredItems.map((item) => item.id);
+    const allSelected = filteredIds.every((id) => selectedIds.has(id));
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredIds));
+    }
+  };
+
+  const selectedArray = Array.from(selectedIds);
 
   const statusColor = (status: string) => {
     switch (status) {
@@ -294,31 +340,115 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
         </Select>
 
         <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-          <span>{filteredItems.length} items</span>
-          {overrideCount > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => clearOverridesMutation.mutate({ month, year })}
-            >
-              Clear overrides ({overrideCount})
-            </Button>
-          )}
-          {pendingIds.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() =>
-                bulkUpdateMutation.mutate({
-                  ids: pendingIds,
-                  status: "accepted",
-                })
-              }
-            >
-              Accept all pending ({pendingIds.length})
-            </Button>
+          {selectedIds.size > 0 ? (
+            <>
+              <span className="font-medium text-foreground">
+                {selectedIds.size} selected
+              </span>
+              <Select
+                value=""
+                onValueChange={(v) => {
+                  if (v)
+                    bulkUpdateMutation.mutate({
+                      ids: selectedArray,
+                      status: v as "pending" | "accepted" | "rejected",
+                    });
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs w-[100px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="accepted">Accept</SelectItem>
+                  <SelectItem value="rejected">Reject</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+              <CategoryPicker
+                currentCategoryName={null}
+                onSelect={(catId) =>
+                  bulkCategoryMutation.mutate({
+                    ids: selectedArray,
+                    categoryId: catId,
+                  })
+                }
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() =>
+                  bulkSplitMutation.mutate({
+                    ids: selectedArray,
+                    splitRatio: 1.0,
+                  })
+                }
+              >
+                Personal
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() =>
+                  bulkSplitMutation.mutate({
+                    ids: selectedArray,
+                    splitRatio: 0.5,
+                  })
+                }
+              >
+                50/50
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() =>
+                  clearItemOverridesMutation.mutate({ ids: selectedArray })
+                }
+              >
+                Clear Overrides
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Deselect
+              </Button>
+            </>
+          ) : (
+            <>
+              <span>{filteredItems.length} items</span>
+              {overrideCount > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() =>
+                    clearOverridesMutation.mutate({ month, year })
+                  }
+                >
+                  Clear overrides ({overrideCount})
+                </Button>
+              )}
+              {pendingIds.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() =>
+                    bulkUpdateMutation.mutate({
+                      ids: pendingIds,
+                      status: "accepted",
+                    })
+                  }
+                >
+                  Accept all pending ({pendingIds.length})
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -328,6 +458,17 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[30px] px-2">
+                <input
+                  type="checkbox"
+                  checked={
+                    filteredItems.length > 0 &&
+                    filteredItems.every((item) => selectedIds.has(item.id))
+                  }
+                  onChange={toggleSelectAll}
+                  className="rounded border-muted-foreground/40"
+                />
+              </TableHead>
               <TableHead className="w-[80px]">Status</TableHead>
               <TableHead className="w-[90px]">Date</TableHead>
               <TableHead>Description</TableHead>
@@ -343,7 +484,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
             {filteredItems.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="text-center text-muted-foreground py-8"
                 >
                   {lineItemsQuery.isLoading
@@ -376,6 +517,16 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                       item.status === "rejected" ? "opacity-50" : ""
                     } ${realOverride ? "border-l-2 border-l-blue-400" : ""}`}
                   >
+                    {/* Checkbox */}
+                    <TableCell className="px-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        onChange={() => toggleSelected(item.id)}
+                        className="rounded border-muted-foreground/40"
+                      />
+                    </TableCell>
+
                     {/* Status badge */}
                     <TableCell>
                       <Badge
@@ -419,12 +570,18 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                         </Badge>
                       ) : null}
                       {realOverride && (
-                        <Badge
-                          variant="outline"
-                          className="ml-1.5 text-[10px] px-1 py-0 border-blue-400 text-blue-500"
+                        <button
+                          className="ml-1.5 inline-flex items-center rounded-md border border-blue-400 text-blue-500 px-1 py-0 text-[10px] font-medium hover:bg-blue-50 hover:border-blue-500"
+                          title="Click to clear overrides and re-apply rules"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearItemOverridesMutation.mutate({
+                              ids: [item.id],
+                            });
+                          }}
                         >
                           Override
-                        </Badge>
+                        </button>
                       )}
                     </TableCell>
 
