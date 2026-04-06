@@ -223,7 +223,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col flex-1 min-h-0 gap-3">
       {/* Filters and bulk actions */}
       <div className="flex items-center gap-3 flex-wrap">
         <Select
@@ -293,7 +293,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
       </div>
 
       {/* Table */}
-      <div className="rounded-md border">
+      <div className="rounded-md border flex-1 min-h-0 overflow-y-auto">
         <Table>
           <TableHeader>
             <TableRow>

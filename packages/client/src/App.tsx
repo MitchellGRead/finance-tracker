@@ -52,7 +52,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background">
       {/* Top bar */}
       <header className="border-b bg-card px-6 py-3">
         <div className="mx-auto flex items-center justify-between">
@@ -87,8 +87,8 @@ export function App() {
       </header>
 
       {/* Main content */}
-      <div className="mx-auto px-6 py-4">
-        <div className="flex gap-4">
+      <div className="flex-1 min-h-0 px-6 py-4">
+        <div className="flex gap-4 h-full">
           {/* Left panel — ~1/3 width */}
           <aside className="w-1/3 shrink-0 space-y-4">
             {/* Top row: Month, Users, Import */}
@@ -111,7 +111,7 @@ export function App() {
           </aside>
 
           {/* Line items table — remaining ~2/3 */}
-          <main className="flex-1 min-w-0">
+          <main className="flex-1 min-w-0 flex flex-col">
             <LineItemsTable month={month} year={year} />
           </main>
         </div>
