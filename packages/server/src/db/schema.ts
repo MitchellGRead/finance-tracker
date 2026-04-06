@@ -75,6 +75,8 @@ export const categoryRules = sqliteTable("category_rules", {
   createdByUserId: int("created_by_user_id")
     .notNull()
     .references(() => users.id),
+  ruleType: text("rule_type").notNull().default("split"), // 'split' | 'personal'
+  userId: int("user_id").references(() => users.id), // null for split, required for personal
   ...timestamps,
 });
 

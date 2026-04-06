@@ -30,27 +30,48 @@ interface LineItemsTableProps {
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
 
 interface MatchingRules {
-  categoryRule: { pattern: string; categoryName: string | null } | null;
+  categoryRule: {
+    pattern: string;
+    categoryName: string | null;
+    isPersonal?: boolean;
+  } | null;
   statusRule: { pattern: string; action: string } | null;
 }
 
 function findMatchingRules(
   description: string,
-  catRules: Array<{ pattern: string; categoryName: string | null }>,
-  arRules: Array<{ pattern: string; action: string }>
+  catRules: Array<{
+    pattern: string;
+    categoryName: string | null;
+    ruleType: string;
+    userId: number | null;
+  }>,
+  arRules: Array<{ pattern: string; action: string }>,
+  itemUserId?: number
 ): MatchingRules {
   const descLower = description.toLowerCase();
 
-  // Find best category rule (longest match)
-  let bestCat: (typeof catRules)[number] | null = null;
+  // Filter applicable category rules: all split rules + personal rules for this user
+  const applicableRules = catRules.filter(
+    (r) =>
+      r.ruleType === "split" ||
+      (r.ruleType === "personal" && r.userId === itemUserId)
+  );
+
+  // Find best category rule (longest match, personal wins at equal length)
+  let bestCat: (typeof applicableRules)[number] | null = null;
   let bestCatLen = 0;
-  for (const rule of catRules) {
+  let bestCatIsPersonal = false;
+  for (const rule of applicableRules) {
+    if (!descLower.includes(rule.pattern.toLowerCase())) continue;
+    const isPersonal = rule.ruleType === "personal";
     if (
-      descLower.includes(rule.pattern.toLowerCase()) &&
-      rule.pattern.length > bestCatLen
+      rule.pattern.length > bestCatLen ||
+      (rule.pattern.length === bestCatLen && isPersonal && !bestCatIsPersonal)
     ) {
       bestCat = rule;
       bestCatLen = rule.pattern.length;
+      bestCatIsPersonal = isPersonal;
     }
   }
 
@@ -69,7 +90,11 @@ function findMatchingRules(
 
   return {
     categoryRule: bestCat
-      ? { pattern: bestCat.pattern, categoryName: bestCat.categoryName }
+      ? {
+          pattern: bestCat.pattern,
+          categoryName: bestCat.categoryName,
+          isPersonal: bestCat.ruleType === "personal",
+        }
       : null,
     statusRule: bestAR
       ? { pattern: bestAR.pattern, action: bestAR.action }
@@ -103,6 +128,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   // Rule creation popover state
   const [ruleItemId, setRuleItemId] = useState<number | null>(null);
   const [rulePattern, setRulePattern] = useState("");
+  const [ruleType, setRuleType] = useState<"split" | "personal">("split");
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
   const lineItemsQuery = useQuery(
@@ -207,6 +233,8 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const openRulePopover = (item: (typeof items)[number]) => {
     setRuleItemId(item.id);
     setRulePattern(suggestPattern(item.description));
+    // Default to personal if item is already 100% split ratio
+    setRuleType(item.splitRatio === 1.0 ? "personal" : "split");
   };
 
   const confirmSaveRule = (item: (typeof items)[number]) => {
@@ -219,6 +247,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
         item.status === "rejected"
           ? "rejected"
           : "accepted",
+      ruleType,
     });
   };
 
@@ -325,7 +354,8 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                 const rules = findMatchingRules(
                   item.description,
                   catRules,
-                  arRules
+                  arRules,
+                  item.userId
                 );
                 const hasCoverage =
                   rules.categoryRule !== null || rules.statusRule !== null;
@@ -429,23 +459,54 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                               *
                             </span>
                           )}
-                        <Input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={Math.round(item.splitRatio * 100)}
-                          onChange={(e) => {
-                            const pct = parseInt(e.target.value);
-                            if (!isNaN(pct) && pct >= 0 && pct <= 100) {
+                        {item.splitRatio === 1.0 ? (
+                          <button
+                            className="h-7 px-2 text-[10px] rounded border bg-orange-100 border-orange-300 text-orange-700"
+                            title="Personal (100%) — click to switch to split"
+                            onClick={() =>
                               updateMutation.mutate({
                                 id: item.id,
-                                splitRatio: pct / 100,
+                                splitRatio: 0.5,
                                 splitRatioOverride: true,
-                              });
+                              })
                             }
-                          }}
-                          className="h-7 w-16 text-xs text-right px-1"
-                        />
+                          >
+                            Personal
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-0.5">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={Math.round(item.splitRatio * 100)}
+                              onChange={(e) => {
+                                const pct = parseInt(e.target.value);
+                                if (!isNaN(pct) && pct >= 0 && pct <= 100) {
+                                  updateMutation.mutate({
+                                    id: item.id,
+                                    splitRatio: pct / 100,
+                                    splitRatioOverride: true,
+                                  });
+                                }
+                              }}
+                              className="h-7 w-14 text-xs text-right px-1"
+                            />
+                            <button
+                              className="h-7 px-1 text-[10px] rounded border border-muted-foreground/20 text-muted-foreground hover:bg-orange-50 hover:text-orange-600 hover:border-orange-300"
+                              title="Mark as personal (100%)"
+                              onClick={() =>
+                                updateMutation.mutate({
+                                  id: item.id,
+                                  splitRatio: 1.0,
+                                  splitRatioOverride: true,
+                                })
+                              }
+                            >
+                              P
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </TableCell>
 
@@ -506,10 +567,14 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                             {rules.categoryRule && (
                               <Badge
                                 variant="outline"
-                                className="text-[9px] px-1 py-0 border-purple-400 text-purple-600"
-                                title={`Category rule: "${rules.categoryRule.pattern}" → ${rules.categoryRule.categoryName}`}
+                                className={`text-[9px] px-1 py-0 ${
+                                  rules.categoryRule.isPersonal
+                                    ? "border-orange-400 text-orange-600"
+                                    : "border-purple-400 text-purple-600"
+                                }`}
+                                title={`${rules.categoryRule.isPersonal ? "Personal" : "Split"} category rule: "${rules.categoryRule.pattern}" → ${rules.categoryRule.categoryName}`}
                               >
-                                C
+                                {rules.categoryRule.isPersonal ? "P" : "C"}
                               </Badge>
                             )}
                           </div>
@@ -541,6 +606,25 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                               }}
                               autoFocus
                             />
+                            <button
+                              className={`h-6 px-1.5 text-[10px] rounded border ${
+                                ruleType === "personal"
+                                  ? "bg-orange-100 border-orange-300 text-orange-700"
+                                  : "bg-muted border-muted-foreground/20 text-muted-foreground"
+                              }`}
+                              onClick={() =>
+                                setRuleType(
+                                  ruleType === "split" ? "personal" : "split"
+                                )
+                              }
+                              title={
+                                ruleType === "personal"
+                                  ? "Personal rule (100% this user, no split)"
+                                  : "Split rule (shared across users)"
+                              }
+                            >
+                              {ruleType === "personal" ? "Personal" : "Split"}
+                            </button>
                             <Button
                               variant="ghost"
                               size="sm"

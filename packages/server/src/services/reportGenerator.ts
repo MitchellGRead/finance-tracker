@@ -37,36 +37,62 @@ export function generateReportData(
   const effectiveAmount = (item: (typeof accepted)[number]) =>
     item.isCredit ? -item.amount : item.amount;
 
+  const isPersonal = (item: (typeof accepted)[number]) =>
+    item.splitRatio === 1.0;
+
   // --- Category totals ---
-  const catTotalsMap = new Map<number | null, number>();
+  const catTotalsMap = new Map<
+    number | null,
+    { total: number; personal: number; shared: number }
+  >();
   for (const item of accepted) {
     const key = item.categoryId;
-    catTotalsMap.set(key, (catTotalsMap.get(key) ?? 0) + effectiveAmount(item));
+    const ea = effectiveAmount(item);
+    const entry = catTotalsMap.get(key) ?? { total: 0, personal: 0, shared: 0 };
+    entry.total += ea;
+    if (isPersonal(item)) {
+      entry.personal += ea;
+    } else {
+      entry.shared += ea;
+    }
+    catTotalsMap.set(key, entry);
   }
   const categoryTotals = Array.from(catTotalsMap.entries())
-    .map(([catId, total]) => ({
+    .map(([catId, { total, personal, shared }]) => ({
       categoryId: catId,
       categoryName: getCategoryName(catId),
       total: Math.round(total * 100) / 100,
+      personalTotal: Math.round(personal * 100) / 100,
+      sharedTotal: Math.round(shared * 100) / 100,
     }))
     .sort((a, b) => b.total - a.total);
 
   // --- User breakdowns ---
   const userBreakdowns = allUsers.map((user) => {
     const userItems = accepted.filter((i) => i.userId === user.id);
-    const byCatMap = new Map<number | null, number>();
+    const byCatMap = new Map<
+      number | null,
+      { total: number; personal: number; shared: number }
+    >();
     for (const item of userItems) {
       const key = item.categoryId;
-      byCatMap.set(
-        key,
-        (byCatMap.get(key) ?? 0) + effectiveAmount(item)
-      );
+      const ea = effectiveAmount(item);
+      const entry = byCatMap.get(key) ?? { total: 0, personal: 0, shared: 0 };
+      entry.total += ea;
+      if (isPersonal(item)) {
+        entry.personal += ea;
+      } else {
+        entry.shared += ea;
+      }
+      byCatMap.set(key, entry);
     }
     const byCategory = Array.from(byCatMap.entries())
-      .map(([catId, total]) => ({
+      .map(([catId, { total, personal, shared }]) => ({
         categoryId: catId,
         categoryName: getCategoryName(catId),
         total: Math.round(total * 100) / 100,
+        personalTotal: Math.round(personal * 100) / 100,
+        sharedTotal: Math.round(shared * 100) / 100,
       }))
       .sort((a, b) => b.total - a.total);
 
@@ -75,10 +101,37 @@ export function generateReportData(
         userItems.reduce((sum, i) => sum + effectiveAmount(i), 0) * 100
       ) / 100;
 
+    const personalSpending =
+      Math.round(
+        userItems
+          .filter(isPersonal)
+          .reduce((sum, i) => sum + effectiveAmount(i), 0) * 100
+      ) / 100;
+
+    const sharedSpending =
+      Math.round(
+        userItems
+          .filter((i) => !isPersonal(i))
+          .reduce((sum, i) => sum + effectiveAmount(i), 0) * 100
+      ) / 100;
+
+    // Effective total = personal spending + user's share of their shared items
+    const effectiveTotal =
+      Math.round(
+        (personalSpending +
+          userItems
+            .filter((i) => !isPersonal(i))
+            .reduce((sum, i) => sum + effectiveAmount(i) * i.splitRatio, 0)) *
+          100
+      ) / 100;
+
     return {
       userId: user.id,
       userName: user.name,
       totalSpent,
+      personalSpending,
+      sharedSpending,
+      effectiveTotal,
       byCategory,
     };
   });

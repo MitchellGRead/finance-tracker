@@ -11,15 +11,17 @@ interface MonthCalendarProps {
   month: number;
   year: number;
   onSelect: (month: number, year: number) => void;
-  onYearChange: (year: number) => void;
 }
 
 export function MonthCalendar({
   month,
   year,
   onSelect,
-  onYearChange,
 }: MonthCalendarProps) {
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+
   const trpc = useTRPC();
   const countsQuery = useQuery(
     trpc.lineItems.countByMonth.queryOptions({ year })
@@ -35,7 +37,10 @@ export function MonthCalendar({
           variant="ghost"
           size="sm"
           className="h-7 px-2"
-          onClick={() => onYearChange(year - 1)}
+          onClick={() => {
+            const newYear = year - 1;
+            onSelect(newYear === currentYear ? currentMonth : 12, newYear);
+          }}
         >
           &larr;
         </Button>
@@ -44,7 +49,10 @@ export function MonthCalendar({
           variant="ghost"
           size="sm"
           className="h-7 px-2"
-          onClick={() => onYearChange(year + 1)}
+          onClick={() => {
+            const newYear = year + 1;
+            onSelect(newYear === currentYear ? currentMonth : 1, newYear);
+          }}
         >
           &rarr;
         </Button>

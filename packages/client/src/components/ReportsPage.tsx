@@ -81,6 +81,20 @@ export function ReportsPage() {
   const totalSpending =
     snapshot?.categoryTotals.reduce((sum, c) => sum + c.total, 0) ?? 0;
 
+  const hasPersonalData = snapshot?.categoryTotals.some(
+    (c) => c.personalTotal != null && c.personalTotal > 0
+  );
+  const totalPersonal =
+    snapshot?.categoryTotals.reduce(
+      (sum, c) => sum + (c.personalTotal ?? 0),
+      0
+    ) ?? 0;
+  const totalShared =
+    snapshot?.categoryTotals.reduce(
+      (sum, c) => sum + (c.sharedTotal ?? 0),
+      0
+    ) ?? 0;
+
   const settlement = snapshot?.splitSummary.settlements[0];
 
   return (
@@ -94,7 +108,6 @@ export function ReportsPage() {
             setMonth(m);
             setYear(y);
           }}
-          onYearChange={setYear}
         />
         {snapshot && (
           <p className="mt-2 text-xs text-muted-foreground">
@@ -133,6 +146,14 @@ export function ReportsPage() {
                     {formatCurrency(totalSpending)}
                   </CardTitle>
                 </CardHeader>
+                {hasPersonalData && (
+                  <CardContent>
+                    <div className="flex gap-3 text-xs text-muted-foreground">
+                      <span>Shared: {formatCurrency(totalShared)}</span>
+                      <span>Personal: {formatCurrency(totalPersonal)}</span>
+                    </div>
+                  </CardContent>
+                )}
               </Card>
 
               <Card>
@@ -192,6 +213,12 @@ export function ReportsPage() {
                     <TableRow>
                       <TableHead>Category</TableHead>
                       <TableHead className="text-right">Total</TableHead>
+                      {hasPersonalData && (
+                        <>
+                          <TableHead className="text-right">Shared</TableHead>
+                          <TableHead className="text-right">Personal</TableHead>
+                        </>
+                      )}
                       <TableHead className="text-right w-[80px]">%</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -204,6 +231,16 @@ export function ReportsPage() {
                         <TableCell className="text-right text-sm tabular-nums">
                           {formatCurrency(cat.total)}
                         </TableCell>
+                        {hasPersonalData && (
+                          <>
+                            <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                              {formatCurrency(cat.sharedTotal ?? 0)}
+                            </TableCell>
+                            <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                              {formatCurrency(cat.personalTotal ?? 0)}
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
                           {totalSpending > 0
                             ? Math.round((cat.total / totalSpending) * 100)
@@ -218,6 +255,16 @@ export function ReportsPage() {
                         <TableCell className="text-right tabular-nums">
                           {formatCurrency(totalSpending)}
                         </TableCell>
+                        {hasPersonalData && (
+                          <>
+                            <TableCell className="text-right tabular-nums text-muted-foreground">
+                              {formatCurrency(totalShared)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-muted-foreground">
+                              {formatCurrency(totalPersonal)}
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell className="text-right tabular-nums">
                           100%
                         </TableCell>
@@ -230,38 +277,83 @@ export function ReportsPage() {
 
             {/* Per-user breakdown */}
             <div className="grid grid-cols-2 gap-4">
-              {snapshot.userBreakdowns.map((user) => (
-                <Card key={user.userId}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{user.userName}</CardTitle>
-                    <CardDescription>
-                      Total: {formatCurrency(user.totalSpent)}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Category</TableHead>
-                          <TableHead className="text-right">Amount</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {user.byCategory.map((cat) => (
-                          <TableRow key={cat.categoryId ?? "null"}>
-                            <TableCell className="text-sm">
-                              {cat.categoryName}
-                            </TableCell>
-                            <TableCell className="text-right text-sm tabular-nums">
-                              {formatCurrency(cat.total)}
-                            </TableCell>
+              {snapshot.userBreakdowns.map((user) => {
+                const userHasPersonal =
+                  user.personalSpending != null && user.personalSpending > 0;
+                return (
+                  <Card key={user.userId}>
+                    <CardHeader>
+                      <CardTitle className="text-base">
+                        {user.userName}
+                      </CardTitle>
+                      <CardDescription>
+                        Total: {formatCurrency(user.totalSpent)}
+                        {userHasPersonal && user.effectiveTotal != null && (
+                          <span className="ml-2">
+                            Effective: {formatCurrency(user.effectiveTotal)}
+                          </span>
+                        )}
+                      </CardDescription>
+                      {userHasPersonal && (
+                        <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                          <span>
+                            Shared: {formatCurrency(user.sharedSpending ?? 0)}
+                          </span>
+                          <span>
+                            Personal:{" "}
+                            {formatCurrency(user.personalSpending ?? 0)}
+                          </span>
+                        </div>
+                      )}
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Category</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                            {userHasPersonal && (
+                              <TableHead className="text-right">Type</TableHead>
+                            )}
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              ))}
+                        </TableHeader>
+                        <TableBody>
+                          {user.byCategory.map((cat) => (
+                            <TableRow key={cat.categoryId ?? "null"}>
+                              <TableCell className="text-sm">
+                                {cat.categoryName}
+                              </TableCell>
+                              <TableCell className="text-right text-sm tabular-nums">
+                                {formatCurrency(cat.total)}
+                              </TableCell>
+                              {userHasPersonal && (
+                                <TableCell className="text-right text-xs text-muted-foreground">
+                                  {(cat.personalTotal ?? 0) > 0 &&
+                                    (cat.sharedTotal ?? 0) > 0 && (
+                                      <span>
+                                        {formatCurrency(cat.sharedTotal ?? 0)} /{" "}
+                                        {formatCurrency(cat.personalTotal ?? 0)}
+                                      </span>
+                                    )}
+                                  {(cat.personalTotal ?? 0) > 0 &&
+                                    (cat.sharedTotal ?? 0) === 0 && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] px-1 py-0 border-orange-300 text-orange-600"
+                                      >
+                                        Personal
+                                      </Badge>
+                                    )}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
 
             {/* Settlement summary */}

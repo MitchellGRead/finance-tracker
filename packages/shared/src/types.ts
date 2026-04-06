@@ -13,15 +13,22 @@ export interface ReportSnapshot {
     categoryId: number | null;
     categoryName: string;
     total: number;
+    personalTotal?: number;
+    sharedTotal?: number;
   }>;
   userBreakdowns: Array<{
     userId: number;
     userName: string;
     totalSpent: number;
+    personalSpending?: number;
+    sharedSpending?: number;
+    effectiveTotal?: number;
     byCategory: Array<{
       categoryId: number | null;
       categoryName: string;
       total: number;
+      personalTotal?: number;
+      sharedTotal?: number;
     }>;
   }>;
   splitSummary: {

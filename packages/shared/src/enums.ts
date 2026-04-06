@@ -18,3 +18,10 @@ export const AcceptRejectAction = {
 } as const;
 export type AcceptRejectAction =
   (typeof AcceptRejectAction)[keyof typeof AcceptRejectAction];
+
+export const CategoryRuleType = {
+  SPLIT: "split",
+  PERSONAL: "personal",
+} as const;
+export type CategoryRuleType =
+  (typeof CategoryRuleType)[keyof typeof CategoryRuleType];

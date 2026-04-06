@@ -9,7 +9,10 @@ import {
   categoryRules,
   acceptRejectRules,
 } from "../db/schema";
-import { GLOBAL_DEFAULT_SPLIT_RATIO } from "@finance-tracker/shared";
+import {
+  GLOBAL_DEFAULT_SPLIT_RATIO,
+  PERSONAL_SPLIT_RATIO,
+} from "@finance-tracker/shared";
 import { applyRulesToLineItems } from "../services/ruleEngine";
 
 export const lineItemsRouter = router({
@@ -195,12 +198,22 @@ export const lineItemsRouter = router({
         userId: z.number(),
         categoryId: z.number().nullable(),
         status: z.enum(["accepted", "rejected"]),
+        ruleType: z.enum(["split", "personal"]).default("split"),
       })
     )
     .mutation(async ({ input }) => {
-      // Update the line item status
+      const isPersonal = input.ruleType === "personal";
+
+      // Update the line item status (and split ratio for personal rules)
       db.update(lineItems)
-        .set({ status: input.status, statusOverride: true })
+        .set({
+          status: input.status,
+          statusOverride: true,
+          ...(isPersonal && {
+            splitRatio: PERSONAL_SPLIT_RATIO,
+            splitRatioOverride: true,
+          }),
+        })
         .where(eq(lineItems.id, input.lineItemId))
         .run();
 
@@ -235,7 +248,10 @@ export const lineItemsRouter = router({
           .from(categoryRules)
           .all()
           .find(
-            (r) => r.pattern.toLowerCase() === input.pattern.toLowerCase()
+            (r) =>
+              r.pattern.toLowerCase() === input.pattern.toLowerCase() &&
+              r.ruleType === input.ruleType &&
+              (input.ruleType === "split" || r.userId === input.userId)
           );
 
         if (!existingCat) {
@@ -244,6 +260,8 @@ export const lineItemsRouter = router({
               pattern: input.pattern,
               categoryId: input.categoryId,
               createdByUserId: input.userId,
+              ruleType: input.ruleType,
+              userId: isPersonal ? input.userId : null,
             })
             .run();
         }

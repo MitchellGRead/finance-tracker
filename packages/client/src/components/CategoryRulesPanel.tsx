@@ -3,6 +3,7 @@ import { useTRPC } from "../lib/trpc";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Badge } from "./ui/badge";
 import {
   Select,
   SelectContent,
@@ -10,12 +11,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
+import type { CategoryRuleType } from "@finance-tracker/shared";
 
 export function CategoryRulesPanel() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [pattern, setPattern] = useState("");
   const [categoryName, setCategoryName] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
+  const [ruleType, setRuleType] = useState<CategoryRuleType>("split");
   const [expanded, setExpanded] = useState(false);
 
   const rulesQuery = useQuery(trpc.categoryRules.list.queryOptions());
@@ -24,6 +29,12 @@ export function CategoryRulesPanel() {
 
   const getCategoryId = (name: string) =>
     categoriesQuery.data?.find((c) => c.name === name)?.id;
+
+  const getUserId = (name: string) =>
+    usersQuery.data?.find((u) => u.name === name)?.id;
+
+  const getUserName = (id: number) =>
+    usersQuery.data?.find((u) => u.id === id)?.name ?? "Unknown";
 
   const createMutation = useMutation(
     trpc.categoryRules.create.mutationOptions({
@@ -50,14 +61,33 @@ export function CategoryRulesPanel() {
   const handleCreate = () => {
     const catId = getCategoryId(categoryName);
     if (!pattern.trim() || !catId) return;
-    const firstUser = usersQuery.data?.[0];
-    if (!firstUser) return;
-    createMutation.mutate({
-      pattern: pattern.trim(),
-      categoryId: catId,
-      createdByUserId: firstUser.id,
-    });
+
+    if (ruleType === "personal") {
+      const userId = getUserId(userName);
+      if (!userId) return;
+      createMutation.mutate({
+        pattern: pattern.trim(),
+        categoryId: catId,
+        createdByUserId: userId,
+        ruleType: "personal",
+        userId,
+      });
+    } else {
+      const firstUser = usersQuery.data?.[0];
+      if (!firstUser) return;
+      createMutation.mutate({
+        pattern: pattern.trim(),
+        categoryId: catId,
+        createdByUserId: firstUser.id,
+        ruleType: "split",
+        userId: null,
+      });
+    }
   };
+
+  const filteredRules = rulesQuery.data?.filter(
+    (r) => r.ruleType === ruleType
+  );
 
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
@@ -73,21 +103,45 @@ export function CategoryRulesPanel() {
 
       {expanded && (
         <div className="mt-3 space-y-3">
-          {rulesQuery.data && rulesQuery.data.length > 0 && (
+          <Tabs
+            value={ruleType}
+            onValueChange={(v) => setRuleType(v as CategoryRuleType)}
+          >
+            <TabsList className="h-7 w-full">
+              <TabsTrigger value="split" className="text-xs flex-1">
+                Split
+              </TabsTrigger>
+              <TabsTrigger value="personal" className="text-xs flex-1">
+                Personal
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {filteredRules && filteredRules.length > 0 && (
             <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {rulesQuery.data.map((rule) => (
+              {filteredRules.map((rule) => (
                 <div
                   key={rule.id}
                   className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/50 group"
                 >
-                  <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
                     <span className="font-mono text-foreground">
                       {rule.pattern}
                     </span>
-                    <span className="text-muted-foreground mx-1">&rarr;</span>
+                    <span className="text-muted-foreground mx-0.5">
+                      &rarr;
+                    </span>
                     <span className="text-muted-foreground">
                       {rule.categoryName ?? "Unknown"}
                     </span>
+                    {rule.ruleType === "personal" && rule.userId && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1 py-0"
+                      >
+                        {getUserName(rule.userId)}
+                      </Badge>
+                    )}
                   </div>
                   <Button
                     variant="ghost"
@@ -112,7 +166,9 @@ export function CategoryRulesPanel() {
             <div className="flex gap-2">
               <Select
                 value={categoryName}
-                onValueChange={(v) => { if (v) setCategoryName(v); }}
+                onValueChange={(v) => {
+                  if (v) setCategoryName(v);
+                }}
               >
                 <SelectTrigger className="h-7 text-xs flex-1">
                   <SelectValue placeholder="Category" />
@@ -125,12 +181,34 @@ export function CategoryRulesPanel() {
                   ))}
                 </SelectContent>
               </Select>
+              {ruleType === "personal" && (
+                <Select
+                  value={userName}
+                  onValueChange={(v) => {
+                    if (v) setUserName(v);
+                  }}
+                >
+                  <SelectTrigger className="h-7 text-xs w-[100px]">
+                    <SelectValue placeholder="User" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {usersQuery.data?.map((user) => (
+                      <SelectItem key={user.id} value={user.name}>
+                        {user.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 size="sm"
                 className="h-7 text-xs"
                 onClick={handleCreate}
                 disabled={
-                  !pattern.trim() || !categoryName || createMutation.isPending
+                  !pattern.trim() ||
+                  !categoryName ||
+                  (ruleType === "personal" && !userName) ||
+                  createMutation.isPending
                 }
               >
                 Add

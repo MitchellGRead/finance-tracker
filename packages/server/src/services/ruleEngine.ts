@@ -6,6 +6,8 @@ import {
   lineItems,
 } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { PERSONAL_SPLIT_RATIO } from "@finance-tracker/shared";
+
 interface RuleMatch<T> {
   rule: T;
   patternLength: number;
@@ -13,10 +15,14 @@ interface RuleMatch<T> {
 
 /**
  * Find the best matching rule for a description using case-insensitive
- * substring matching. Longest pattern wins. If multiple rules match with
- * the same length, first-created wins and `hasConflict` is set.
+ * substring matching. Longest pattern wins. For category rules, personal
+ * rules win over split rules at equal pattern length. If multiple rules
+ * of the same type match with the same length, first-created wins and
+ * `hasConflict` is set.
  */
-function findBestMatch<T extends { pattern: string; createdAt: string }>(
+function findBestMatch<
+  T extends { pattern: string; createdAt: string; ruleType?: string },
+>(
   description: string,
   rules: T[]
 ): { match: T | null; hasConflict: boolean } {
@@ -31,17 +37,27 @@ function findBestMatch<T extends { pattern: string; createdAt: string }>(
 
   if (matches.length === 0) return { match: null, hasConflict: false };
 
-  // Sort by pattern length descending, then by createdAt ascending
+  // Sort by pattern length descending, personal before split at equal length,
+  // then by createdAt ascending
   matches.sort((a, b) => {
     if (b.patternLength !== a.patternLength) {
       return b.patternLength - a.patternLength;
     }
+    // Personal rules win over split rules at equal length
+    const aPersonal = a.rule.ruleType === "personal" ? 0 : 1;
+    const bPersonal = b.rule.ruleType === "personal" ? 0 : 1;
+    if (aPersonal !== bPersonal) return aPersonal - bPersonal;
     return a.rule.createdAt.localeCompare(b.rule.createdAt);
   });
 
   const longest = matches[0].patternLength;
   const topMatches = matches.filter((m) => m.patternLength === longest);
-  const hasConflict = topMatches.length > 1;
+  // Only flag conflict between rules of the same type at equal length
+  const topType = topMatches[0].rule.ruleType;
+  const sameTypeTopMatches = topMatches.filter(
+    (m) => m.rule.ruleType === topType
+  );
+  const hasConflict = sameTypeTopMatches.length > 1;
 
   return { match: matches[0].rule, hasConflict };
 }
@@ -78,24 +94,36 @@ export function applyRulesToLineItems(
       applied++;
     }
 
-    // 2. Category rules (global, longest match, conflict flagging)
-    const catResult = findBestMatch(item.description, allCategoryRules);
+    // 2. Category rules (filter applicable rules per item, longest match, conflict flagging)
+    const applicableRules = allCategoryRules.filter(
+      (r) =>
+        r.ruleType === "split" ||
+        (r.ruleType === "personal" && r.userId === item.userId)
+    );
+    const catResult = findBestMatch(item.description, applicableRules);
     if (catResult.match) {
       updates.categoryId = catResult.match.categoryId;
       applied++;
 
       if (catResult.hasConflict) {
         conflicts++;
-        // Add a note indicating conflict for user review
         updates.note = `[Category conflict] Multiple rules matched — auto-assigned by first-created rule`;
       }
 
-      // 3. Apply category's default split ratio if it has one
-      const category = allCategories.find(
-        (c) => c.id === catResult.match!.categoryId
-      );
-      if (category?.defaultSplitRatio !== null && category?.defaultSplitRatio !== undefined) {
-        updates.splitRatio = category.defaultSplitRatio;
+      if (catResult.match.ruleType === "personal") {
+        // Personal rules always set split ratio to 100% (no split)
+        updates.splitRatio = PERSONAL_SPLIT_RATIO;
+      } else {
+        // 3. Apply category's default split ratio if it has one
+        const category = allCategories.find(
+          (c) => c.id === catResult.match!.categoryId
+        );
+        if (
+          category?.defaultSplitRatio !== null &&
+          category?.defaultSplitRatio !== undefined
+        ) {
+          updates.splitRatio = category.defaultSplitRatio;
+        }
       }
     }
 
@@ -125,7 +153,8 @@ export function reapplyRulesForPeriod(
     (item) =>
       item.date.startsWith(prefix) &&
       !item.statusOverride &&
-      !item.categoryOverride
+      !item.categoryOverride &&
+      !item.splitRatioOverride
   );
 
   const ids = periodItems.map((item) => item.id);

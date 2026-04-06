@@ -10,12 +10,13 @@ import { AcceptRejectRulesPanel } from "./components/AcceptRejectRulesPanel";
 import { MonthCalendar } from "./components/MonthCalendar";
 import { LineItemsTable } from "./components/LineItemsTable";
 import { AddLineItem } from "./components/AddLineItem";
+import { AddRent } from "./components/AddRent";
 import { ReportsPage } from "./components/ReportsPage";
 
 type Page = "workspace" | "reports";
 
 export function App() {
-  const { month, year, label, setYear, setMonthAndYear } = useMonthPicker();
+  const { month, year, label, setMonthAndYear } = useMonthPicker();
   const [page, setPage] = useState<Page>("workspace");
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -138,6 +139,7 @@ export function App() {
                   Clear Month
                 </Button>
                 <AddLineItem month={month} year={year} />
+                <AddRent month={month} year={year} />
               </>
             )}
           </div>
@@ -156,7 +158,6 @@ export function App() {
                   month={month}
                   year={year}
                   onSelect={setMonthAndYear}
-                  onYearChange={setYear}
                 />
                 <UserManager />
                 <ImportPanel month={month} year={year} />
