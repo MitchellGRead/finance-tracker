@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { suggestPattern } from "../lib/patterns";
@@ -213,11 +213,29 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
   const overrideCount = items.filter((item) => isRealOverride(item)).length;
 
-  const toggleSelected = (id: number) => {
+  const lastClickedId = useRef<number | null>(null);
+
+  const toggleSelected = (id: number, shiftKey: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
+
+      if (shiftKey && lastClickedId.current !== null) {
+        const ids = filteredItems.map((item) => item.id);
+        const startIdx = ids.indexOf(lastClickedId.current);
+        const endIdx = ids.indexOf(id);
+        if (startIdx !== -1 && endIdx !== -1) {
+          const [from, to] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+          for (let i = from; i <= to; i++) {
+            next.add(ids[i]);
+          }
+          lastClickedId.current = id;
+          return next;
+        }
+      }
+
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      lastClickedId.current = id;
       return next;
     });
   };
@@ -522,7 +540,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                       <input
                         type="checkbox"
                         checked={selectedIds.has(item.id)}
-                        onChange={() => toggleSelected(item.id)}
+                        onChange={(e) => toggleSelected(item.id, e.nativeEvent instanceof MouseEvent && e.nativeEvent.shiftKey)}
                         className="rounded border-muted-foreground/40"
                       />
                     </TableCell>
