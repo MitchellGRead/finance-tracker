@@ -129,6 +129,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [editingNote, setEditingNote] = useState<number | null>(null);
   const [noteValue, setNoteValue] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -139,6 +140,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const [ruleType, setRuleType] = useState<"split" | "personal">("split");
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
+  const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
   const lineItemsQuery = useQuery(
     trpc.lineItems.list.queryOptions({ month, year })
   );
@@ -204,6 +206,13 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
     if (userFilter !== "all" && getUserName(item.userId) !== userFilter)
       return false;
+    if (categoryFilter !== "all") {
+      if (categoryFilter === "uncategorized") {
+        if (item.categoryId !== null) return false;
+      } else if (String(item.categoryId) !== categoryFilter) {
+        return false;
+      }
+    }
     return true;
   });
 
@@ -343,6 +352,26 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
             {usersQuery.data?.map((user) => (
               <SelectItem key={user.id} value={user.name}>
                 {user.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={categoryFilter}
+          onValueChange={(v) => {
+            if (v) setCategoryFilter(v);
+          }}
+        >
+          <SelectTrigger className="h-8 w-[160px] text-sm">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            <SelectItem value="uncategorized">Uncategorized</SelectItem>
+            {categoriesQuery.data?.map((category) => (
+              <SelectItem key={category.id} value={String(category.id)}>
+                {category.name}
               </SelectItem>
             ))}
           </SelectContent>
