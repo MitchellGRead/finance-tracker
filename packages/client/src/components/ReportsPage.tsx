@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import {
@@ -94,6 +94,27 @@ export function ReportsPage() {
       (sum, c) => sum + (c.sharedTotal ?? 0),
       0
     ) ?? 0;
+
+  // Per-user personal amount indexed by (categoryKey, userId) for the category breakdown.
+  const categoryKey = (id: number | null) => (id === null ? "null" : String(id));
+  const personalByCategoryByUser = new Map<string, Map<number, number>>();
+  for (const u of snapshot?.userBreakdowns ?? []) {
+    for (const cat of u.byCategory) {
+      const amount = cat.personalTotal ?? 0;
+      if (amount <= 0) continue;
+      const key = categoryKey(cat.categoryId);
+      if (!personalByCategoryByUser.has(key)) {
+        personalByCategoryByUser.set(key, new Map());
+      }
+      personalByCategoryByUser.get(key)!.set(u.userId, amount);
+    }
+  }
+  const personalTotalByUser = new Map<number, number>(
+    (snapshot?.userBreakdowns ?? []).map((u) => [
+      u.userId,
+      u.personalSpending ?? 0,
+    ])
+  );
 
   const settlement = snapshot?.splitSummary.settlements[0];
 
@@ -216,39 +237,59 @@ export function ReportsPage() {
                       {hasPersonalData && (
                         <>
                           <TableHead className="text-right">Shared</TableHead>
-                          <TableHead className="text-right">Personal</TableHead>
+                          {snapshot.userBreakdowns.map((u) => (
+                            <TableHead
+                              key={u.userId}
+                              className="text-right"
+                            >
+                              Personal ({u.userName})
+                            </TableHead>
+                          ))}
                         </>
                       )}
                       <TableHead className="text-right w-[80px]">%</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {snapshot.categoryTotals.map((cat) => (
-                      <TableRow key={cat.categoryId ?? "null"}>
-                        <TableCell className="text-sm font-medium">
-                          {cat.categoryName}
-                        </TableCell>
-                        <TableCell className="text-right text-sm tabular-nums">
-                          {formatCurrency(cat.total)}
-                        </TableCell>
-                        {hasPersonalData && (
-                          <>
-                            <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                              {formatCurrency(cat.sharedTotal ?? 0)}
-                            </TableCell>
-                            <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                              {formatCurrency(cat.personalTotal ?? 0)}
-                            </TableCell>
-                          </>
-                        )}
-                        <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                          {totalSpending > 0
-                            ? Math.round((cat.total / totalSpending) * 100)
-                            : 0}
-                          %
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {snapshot.categoryTotals.map((cat) => {
+                      const perUser = personalByCategoryByUser.get(
+                        categoryKey(cat.categoryId)
+                      );
+                      return (
+                        <TableRow key={cat.categoryId ?? "null"}>
+                          <TableCell className="text-sm font-medium">
+                            {cat.categoryName}
+                          </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums">
+                            {formatCurrency(cat.total)}
+                          </TableCell>
+                          {hasPersonalData && (
+                            <>
+                              <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                                {formatCurrency(cat.sharedTotal ?? 0)}
+                              </TableCell>
+                              {snapshot.userBreakdowns.map((u) => {
+                                const amount = perUser?.get(u.userId) ?? 0;
+                                return (
+                                  <TableCell
+                                    key={u.userId}
+                                    className="text-right text-sm tabular-nums text-muted-foreground"
+                                  >
+                                    {amount > 0 ? formatCurrency(amount) : "—"}
+                                  </TableCell>
+                                );
+                              })}
+                            </>
+                          )}
+                          <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                            {totalSpending > 0
+                              ? Math.round((cat.total / totalSpending) * 100)
+                              : 0}
+                            %
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                     {snapshot.categoryTotals.length > 0 && (
                       <TableRow className="font-semibold border-t-2">
                         <TableCell>Total</TableCell>
@@ -260,9 +301,17 @@ export function ReportsPage() {
                             <TableCell className="text-right tabular-nums text-muted-foreground">
                               {formatCurrency(totalShared)}
                             </TableCell>
-                            <TableCell className="text-right tabular-nums text-muted-foreground">
-                              {formatCurrency(totalPersonal)}
-                            </TableCell>
+                            {snapshot.userBreakdowns.map((u) => {
+                              const amount = personalTotalByUser.get(u.userId) ?? 0;
+                              return (
+                                <TableCell
+                                  key={u.userId}
+                                  className="text-right tabular-nums text-muted-foreground"
+                                >
+                                  {amount > 0 ? formatCurrency(amount) : "—"}
+                                </TableCell>
+                              );
+                            })}
                           </>
                         )}
                         <TableCell className="text-right tabular-nums">
@@ -311,43 +360,40 @@ export function ReportsPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Category</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
+                            <TableHead className="text-right">Total</TableHead>
+                            <TableHead className="text-right">Shared</TableHead>
                             {userHasPersonal && (
-                              <TableHead className="text-right">Type</TableHead>
+                              <TableHead className="text-right">
+                                Personal
+                              </TableHead>
                             )}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {user.byCategory.map((cat) => (
-                            <TableRow key={cat.categoryId ?? "null"}>
-                              <TableCell className="text-sm">
-                                {cat.categoryName}
-                              </TableCell>
-                              <TableCell className="text-right text-sm tabular-nums">
-                                {formatCurrency(cat.total)}
-                              </TableCell>
-                              {userHasPersonal && (
-                                <TableCell className="text-right text-xs text-muted-foreground">
-                                  {(cat.personalTotal ?? 0) > 0 &&
-                                    (cat.sharedTotal ?? 0) > 0 && (
-                                      <span>
-                                        {formatCurrency(cat.sharedTotal ?? 0)} /{" "}
-                                        {formatCurrency(cat.personalTotal ?? 0)}
-                                      </span>
-                                    )}
-                                  {(cat.personalTotal ?? 0) > 0 &&
-                                    (cat.sharedTotal ?? 0) === 0 && (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-[10px] px-1 py-0 border-orange-300 text-orange-600"
-                                      >
-                                        Personal
-                                      </Badge>
-                                    )}
+                          {user.byCategory.map((cat) => {
+                            const shared = cat.sharedTotal ?? 0;
+                            const personal = cat.personalTotal ?? 0;
+                            return (
+                              <TableRow key={cat.categoryId ?? "null"}>
+                                <TableCell className="text-sm">
+                                  {cat.categoryName}
                                 </TableCell>
-                              )}
-                            </TableRow>
-                          ))}
+                                <TableCell className="text-right text-sm tabular-nums">
+                                  {formatCurrency(cat.total)}
+                                </TableCell>
+                                <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                                  {shared > 0 ? formatCurrency(shared) : "—"}
+                                </TableCell>
+                                {userHasPersonal && (
+                                  <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                                    {personal > 0
+                                      ? formatCurrency(personal)
+                                      : "—"}
+                                  </TableCell>
+                                )}
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </CardContent>
@@ -467,7 +513,6 @@ function TrendSection({
                   : 0;
               const isExpanded = expandedPeriod === prior.period;
 
-              // Collect all category names from both snapshots
               const allCategoryNames = new Set([
                 ...currentSnapshot.categoryTotals.map((c) => c.categoryName),
                 ...prior.data.categoryTotals.map((c) => c.categoryName),
@@ -477,112 +522,107 @@ function TrendSection({
               );
 
               return (
-                <TableRow
-                  key={prior.period}
-                  className="group"
-                >
-                  <TableCell
-                    colSpan={4}
-                    className="p-0"
+                <Fragment key={prior.period}>
+                  <TableRow
+                    className="cursor-pointer hover:bg-muted/30"
+                    onClick={() =>
+                      setExpandedPeriod(isExpanded ? null : prior.period)
+                    }
                   >
-                    {/* Summary row */}
-                    <button
-                      className="w-full flex items-center hover:bg-muted/30 px-4 py-2 text-left"
-                      onClick={() =>
-                        setExpandedPeriod(isExpanded ? null : prior.period)
-                      }
-                    >
-                      <span className="flex-1 text-sm">
-                        {prior.period}
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {isExpanded ? "▾" : "▸"}
+                    <TableCell className="text-sm">
+                      <span className="mr-2 text-xs text-muted-foreground">
+                        {isExpanded ? "▾" : "▸"}
+                      </span>
+                      {prior.period}
+                    </TableCell>
+                    <TableCell className="text-right text-sm tabular-nums">
+                      {formatCurrency(priorTotal)}
+                      {totalChange !== 0 && (
+                        <span
+                          className={`ml-2 text-xs ${totalChange > 0 ? "text-destructive" : "text-green-600"}`}
+                        >
+                          {totalChange > 0 ? "+" : ""}
+                          {totalPct}%
                         </span>
-                      </span>
-                      <span className="w-[150px] text-right text-sm tabular-nums">
-                        {formatCurrency(priorTotal)}
-                        {totalChange !== 0 && (
-                          <span
-                            className={`ml-2 text-xs ${totalChange > 0 ? "text-destructive" : "text-green-600"}`}
-                          >
-                            {totalChange > 0 ? "+" : ""}
-                            {totalPct}%
-                          </span>
-                        )}
-                      </span>
-                      <span className="w-[120px] text-right text-sm tabular-nums">
-                        {formatCurrency(priorSettlement)}
-                      </span>
-                      <span className="w-[80px] text-right text-sm tabular-nums">
-                        {prior.data.acceptedCount}
-                      </span>
-                    </button>
-
-                    {/* Expanded category comparison */}
-                    {isExpanded && (
-                      <div className="border-t bg-muted/20 px-6 py-3">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="text-xs">Category</TableHead>
-                              <TableHead className="text-xs text-right">
-                                Current
-                              </TableHead>
-                              <TableHead className="text-xs text-right">
-                                {prior.period}
-                              </TableHead>
-                              <TableHead className="text-xs text-right w-[80px]">
-                                Change
-                              </TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {Array.from(allCategoryNames)
-                              .map((name) => {
-                                const curr = currentCatMap.get(name) ?? 0;
-                                const prev = priorCatMap.get(name) ?? 0;
-                                const change = curr - prev;
-                                const pct =
-                                  prev > 0
-                                    ? Math.round((change / prev) * 100)
-                                    : curr > 0
-                                      ? 100
-                                      : 0;
-                                return { name, curr, prev, change, pct };
-                              })
-                              .sort((a, b) => b.curr - a.curr)
-                              .map((row) => (
-                                <TableRow key={row.name}>
-                                  <TableCell className="text-xs">
-                                    {row.name}
-                                  </TableCell>
-                                  <TableCell className="text-xs text-right tabular-nums">
-                                    {formatCurrency(row.curr)}
-                                  </TableCell>
-                                  <TableCell className="text-xs text-right tabular-nums">
-                                    {formatCurrency(row.prev)}
-                                  </TableCell>
-                                  <TableCell className="text-xs text-right tabular-nums">
-                                    {row.change !== 0 && (
-                                      <span
-                                        className={
-                                          row.change > 0
-                                            ? "text-destructive"
-                                            : "text-green-600"
-                                        }
-                                      >
-                                        {row.change > 0 ? "+" : ""}
-                                        {row.pct}%
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-sm tabular-nums">
+                      {formatCurrency(priorSettlement)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm tabular-nums">
+                      {prior.data.acceptedCount}
+                    </TableCell>
+                  </TableRow>
+                  {isExpanded && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="p-0">
+                        <div className="border-t bg-muted/20 px-6 py-3">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">
+                                  Category
+                                </TableHead>
+                                <TableHead className="text-xs text-right">
+                                  Current
+                                </TableHead>
+                                <TableHead className="text-xs text-right">
+                                  {prior.period}
+                                </TableHead>
+                                <TableHead className="text-xs text-right w-[80px]">
+                                  Change
+                                </TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {Array.from(allCategoryNames)
+                                .map((name) => {
+                                  const curr = currentCatMap.get(name) ?? 0;
+                                  const prev = priorCatMap.get(name) ?? 0;
+                                  const change = curr - prev;
+                                  const pct =
+                                    prev > 0
+                                      ? Math.round((change / prev) * 100)
+                                      : curr > 0
+                                        ? 100
+                                        : 0;
+                                  return { name, curr, prev, change, pct };
+                                })
+                                .sort((a, b) => b.curr - a.curr)
+                                .map((row) => (
+                                  <TableRow key={row.name}>
+                                    <TableCell className="text-xs">
+                                      {row.name}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-right tabular-nums">
+                                      {formatCurrency(row.curr)}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-right tabular-nums">
+                                      {formatCurrency(row.prev)}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-right tabular-nums">
+                                      {row.change !== 0 && (
+                                        <span
+                                          className={
+                                            row.change > 0
+                                              ? "text-destructive"
+                                              : "text-green-600"
+                                          }
+                                        >
+                                          {row.change > 0 ? "+" : ""}
+                                          {row.pct}%
+                                        </span>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               );
             })}
           </TableBody>
