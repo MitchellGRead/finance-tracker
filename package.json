@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "pnpm run --parallel dev",
     "build": "pnpm run --parallel build",
+    "test": "pnpm -r test",
     "db:generate": "pnpm --filter @finance-tracker/server db:generate",
     "db:migrate": "pnpm --filter @finance-tracker/server db:migrate"
   },
