@@ -38,11 +38,16 @@ finance-tracker/
 - All tables must include `created_at` and `updated_at` timestamp columns
 - Use Drizzle ORM for all database interactions — no raw SQL
 - IDs are auto-incrementing integers
-- **Migrations are hand-written.** `drizzle/meta/` has snapshots only for
-  `0000`/`0001` while the journal has five entries, and `__drizzle_migrations`
-  records only the first two. `drizzle-kit generate` would emit a destructive
-  diff and `drizzle-kit migrate` fails. Write the `.sql`, add a journal entry,
-  apply with `sqlite3`, and back up the db first.
+- Migrations managed through Drizzle Kit: `pnpm db:generate` then `pnpm db:migrate`
+- **Never edit a migration file that has been applied** — not even a comment.
+  The ledger stores a sha256 of the file's contents, so any change makes drizzle
+  treat it as a new, unapplied migration and try to replay it.
+- Back up the database before migrating (`backups/` is gitignored)
+- If `db:migrate` tries to replay an old migration, the ledger
+  (`__drizzle_migrations`) has drifted from `drizzle/meta/_journal.json` —
+  usually because a migration was applied by hand. Run `pnpm db:repair-ledger`
+  to see the gap and `--apply` to close it. It writes ledger rows only; it never
+  runs SQL, so the schema must already match.
 
 ### API
 - All client-server communication goes through tRPC routers

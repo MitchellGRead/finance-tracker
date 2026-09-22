@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:repair-ledger": "tsx scripts/repair-migration-ledger.ts"
   },
   "dependencies": {
     "@finance-tracker/shared": "workspace:*",

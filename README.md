@@ -97,16 +97,22 @@ This starts both the client (Vite dev server) and the server (Hono) concurrently
 ### Database
 
 ```bash
-pnpm db:generate   # Generate migrations from schema — see the warning below
-pnpm db:migrate    # Apply migrations
+pnpm db:generate       # Generate a migration from the schema
+pnpm db:migrate        # Apply pending migrations
+pnpm db:repair-ledger  # Diagnose/repair a drifted migration ledger
 ```
 
-> **Migrations are hand-written in this project.** `drizzle/meta/` only has
-> snapshots for `0000`/`0001`, while the journal has five entries — `0002`
-> onward were written by hand. `drizzle-kit generate` would diff against the
-> stale `0001` snapshot and emit a destructive migration, and `drizzle-kit
-> migrate` fails because `__drizzle_migrations` only records the first two.
-> Write the `.sql` file, add a journal entry, and apply it with `sqlite3`.
+Back up the database before migrating — `backups/` is gitignored. Never edit a
+migration file once it has been applied: the ledger stores a hash of its
+contents, so even a comment change makes drizzle try to replay it.
+
+Drizzle decides what to apply by hashing each file in `drizzle/` and looking the
+hash up in the `__drizzle_migrations` table. If a migration is ever applied by
+hand, the schema moves but the ledger does not, and the next `db:migrate` tries
+to replay it against a schema that has already changed. `pnpm db:repair-ledger`
+reports that gap; `pnpm db:repair-ledger --apply` closes it by recording the
+missing migrations as applied. It only writes ledger rows — it never runs SQL,
+so use it only when the database already contains those changes.
 
 ## Project Structure
 
