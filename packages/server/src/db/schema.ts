@@ -63,6 +63,15 @@ export const lineItems = sqliteTable("line_items", {
   note: text("note"),
   isManual: int("is_manual", { mode: "boolean" }).notNull().default(false),
   isCredit: int("is_credit", { mode: "boolean" }).notNull().default(false),
+  // AI suggestions (shadow values — see .documentation/SOP/ai-suggestions.md).
+  // Never read by reports; materialized into categoryId/splitRatio on accept.
+  suggestedCategoryId: int("suggested_category_id").references(() => categories.id),
+  suggestedCategoryConfidence: real("suggested_category_confidence"),
+  suggestedSplitRatio: real("suggested_split_ratio"),
+  suggestedSplitConfidence: real("suggested_split_confidence"),
+  suggestionStatus: text("suggestion_status"), // null = never generated | 'shadow' | 'confirmed'
+  suggestionModel: text("suggestion_model"),
+  suggestedAt: text("suggested_at"),
   ...timestamps,
 });
 

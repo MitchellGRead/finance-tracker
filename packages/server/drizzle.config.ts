@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "sqlite",
   dbCredentials: {
-    url: "finance-tracker.db",
+    url: process.env.DATABASE_PATH ?? "finance-tracker.db",
   },
 });

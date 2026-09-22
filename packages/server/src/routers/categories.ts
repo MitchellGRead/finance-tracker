@@ -48,6 +48,13 @@ export const categoriesRouter = router({
   delete: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
+      // line_items.suggested_category_id references this row and foreign keys are
+      // ON, so a category referenced only by a suggestion would refuse to delete.
+      db.update(lineItems)
+        .set({ suggestedCategoryId: null, suggestedCategoryConfidence: null })
+        .where(eq(lineItems.suggestedCategoryId, input.id))
+        .run();
+
       return db.delete(categories).where(eq(categories.id, input.id)).run();
     }),
 

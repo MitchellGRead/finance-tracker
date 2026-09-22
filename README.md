@@ -28,6 +28,16 @@ The system gets smarter over time: categorization rules, accept/reject rules, an
 - Category conflicts flagged for review (first-created rule wins)
 - Per-item category overrides don't change the underlying rule
 
+### Smart Suggestions (AI)
+- Pending, uncategorized items get a suggested category and a personal/shared
+  call from TypeSafe's Jev model
+- Suggestions render as ghost values you can accept, change, or ignore; they are
+  applied when you accept the line item
+- Suggests only from categories that already exist — never invents new ones
+- Off unless `TYPESAFE_API_KEY` is set. Costs roughly $0.02 per statement import
+- **Sends merchant descriptions to a third-party API** (long digit runs are
+  masked first)
+
 ### Cost Splitting
 - Global default split ratio: 50/50
 - Per-category default split ratios (e.g., Groceries always 60/40)
@@ -66,6 +76,16 @@ The system gets smarter over time: categorization rules, accept/reject rules, an
 pnpm install
 ```
 
+### Environment
+
+```bash
+cp packages/server/.env.example packages/server/.env
+```
+
+The file must live in `packages/server/` — paths in it are resolved relative to
+that package, which is where the server runs. Everything has a working default
+except `TYPESAFE_API_KEY`; leave it blank to run without AI suggestions.
+
 ### Development
 
 ```bash
@@ -77,9 +97,16 @@ This starts both the client (Vite dev server) and the server (Hono) concurrently
 ### Database
 
 ```bash
-pnpm db:generate   # Generate migrations from schema
+pnpm db:generate   # Generate migrations from schema — see the warning below
 pnpm db:migrate    # Apply migrations
 ```
+
+> **Migrations are hand-written in this project.** `drizzle/meta/` only has
+> snapshots for `0000`/`0001`, while the journal has five entries — `0002`
+> onward were written by hand. `drizzle-kit generate` would diff against the
+> stale `0001` snapshot and emit a destructive migration, and `drizzle-kit
+> migrate` fails because `__drizzle_migrations` only records the first two.
+> Write the `.sql` file, add a journal entry, and apply it with `sqlite3`.
 
 ## Project Structure
 

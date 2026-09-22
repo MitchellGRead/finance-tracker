@@ -23,3 +23,12 @@ export const RuleType = {
   PERSONAL: "personal",
 } as const;
 export type RuleType = (typeof RuleType)[keyof typeof RuleType];
+
+export const SuggestionStatus = {
+  /** Generated and awaiting the operator — renders as a ghost value. */
+  SHADOW: "shadow",
+  /** Materialized into the real columns when the line item was accepted. */
+  CONFIRMED: "confirmed",
+} as const;
+export type SuggestionStatus =
+  (typeof SuggestionStatus)[keyof typeof SuggestionStatus];

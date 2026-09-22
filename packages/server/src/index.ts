@@ -1,12 +1,15 @@
+import "./lib/loadEnv";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./routers";
+import { config } from "./lib/config";
+import { isSuggestionsEnabled } from "./services/typesafeClient";
 
 const app = new Hono();
 
-app.use("/*", cors({ origin: "http://localhost:5173" }));
+app.use("/*", cors({ origin: config.corsOrigin }));
 
 app.use("/trpc/*", async (c) => {
   const response = await fetchRequestHandler({
@@ -20,7 +23,12 @@ app.use("/trpc/*", async (c) => {
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-const port = 3200;
+const port = config.port;
+if (!isSuggestionsEnabled()) {
+  console.warn(
+    "TYPESAFE_API_KEY is not set — AI suggestions are disabled. See packages/server/.env.example."
+  );
+}
 console.log(`Server running on http://localhost:${port}`);
 const server = serve({ fetch: app.fetch, port });
 

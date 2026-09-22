@@ -5,6 +5,7 @@ import { lineItemsRouter } from "./lineItems";
 import { categoriesRouter } from "./categories";
 import { rulesRouter } from "./rules";
 import { reportsRouter } from "./reports";
+import { suggestionsRouter } from "./suggestions";
 
 export const appRouter = router({
   users: usersRouter,
@@ -13,6 +14,7 @@ export const appRouter = router({
   categories: categoriesRouter,
   rules: rulesRouter,
   reports: reportsRouter,
+  suggestions: suggestionsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -9,6 +9,9 @@ import {
   applyRulesToLineItems,
   reapplyRulesForPeriod,
 } from "../services/ruleEngine";
+import { startSuggestionRun } from "../services/suggestionEngine";
+import { isSuggestionsEnabled } from "../services/typesafeClient";
+import { config } from "../lib/config";
 
 export const statementsRouter = router({
   list: publicProcedure
@@ -67,6 +70,7 @@ export const statementsRouter = router({
 
       let rulesApplied = 0;
       let ruleConflicts = 0;
+      let suggestionRunId: string | null = null;
 
       if (parsed.length > 0) {
         const inserted = db
@@ -90,6 +94,13 @@ export const statementsRouter = router({
         const ruleResult = applyRulesToLineItems(insertedIds);
         rulesApplied = ruleResult.applied;
         ruleConflicts = ruleResult.conflicts;
+
+        // Detached: a 200-item batch takes ~25s, far too long to hold the
+        // mutation open. Rules have already run, so only the gaps they left are
+        // eligible. An inference failure can never fail the import.
+        if (config.typesafe.suggestOnImport && isSuggestionsEnabled()) {
+          suggestionRunId = startSuggestionRun(insertedIds).runId;
+        }
       }
 
       return {
@@ -97,6 +108,7 @@ export const statementsRouter = router({
         lineItemCount: parsed.length,
         rulesApplied,
         ruleConflicts,
+        suggestionRunId,
       };
     }),
 

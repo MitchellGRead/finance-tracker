@@ -29,6 +29,13 @@
       "when": 1775600000000,
       "tag": "0003_unified_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790000000000,
+      "tag": "0004_ai_suggestions",
+      "breakpoints": true
     }
   ]
 }
