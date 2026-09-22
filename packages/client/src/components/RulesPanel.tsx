@@ -176,7 +176,9 @@ export function RulesPanel({ searchFilter = "" }: RulesPanelProps) {
         />
         <Select
           value={formState.ruleType}
-          onValueChange={(v) => setField("ruleType", v)}
+          onValueChange={(v) => {
+            if (v) setField("ruleType", v);
+          }}
         >
           <SelectTrigger className="h-7 text-xs w-[90px]">
             <SelectValue />

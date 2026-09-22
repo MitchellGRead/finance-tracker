@@ -1,6 +1,7 @@
 {
   "name": "finance-tracker",
   "private": true,
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "pnpm run --parallel dev",
     "build": "pnpm run --parallel build",
@@ -9,7 +10,7 @@
     "db:migrate": "pnpm --filter @finance-tracker/server db:migrate"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24 <25"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

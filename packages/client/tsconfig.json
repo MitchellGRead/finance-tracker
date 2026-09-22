@@ -2,8 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "react-jsx",
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "noEmit": true,
     "declaration": false,
     "declarationMap": false,
     "paths": {
@@ -11,6 +10,5 @@
       "@finance-tracker/server/*": ["../server/src/*"]
     }
   },
-  "include": ["src"],
-  "references": [{ "path": "../server" }, { "path": "../shared" }]
+  "include": ["src"]
 }
