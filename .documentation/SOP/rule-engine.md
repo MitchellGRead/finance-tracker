@@ -26,12 +26,42 @@ When a CSV is imported and line items are parsed, rules are applied in this orde
 
 ## Pattern Matching
 
-All pattern matching uses **case-insensitive substring containment**.
+All pattern matching uses **case- and whitespace-insensitive substring
+containment**. Both sides are normalized first — whitespace runs collapse to a
+single space and the text is lowercased — by `normalizeForMatch` in
+`packages/shared/src/matching.ts`.
 
 Example: Pattern `"THRIFTY FOODS"` matches:
 - `"THRIFTY FOODS #9461 VIC VICTORIA"`
 - `"thrifty foods downtown"`
 - `"THRIFTY FOODS"`
+
+### Why whitespace is normalized
+
+Statement CSVs are fixed-width column dumps, so a description pads the merchant
+away from the city:
+
+```
+"WISPR                   SAN FRANCISCO"
+```
+
+HTML collapses that whitespace, so the table shows `WISPR SAN FRANCISCO`, and
+`suggestPattern` collapses it too when proposing a pattern. Without
+normalization a pattern spanning the gap — `"WISPR SAN"` — looks correct in
+every UI and never matches anything. The failure is silent: the rule exists,
+the badge never appears, and the item stays pending.
+
+Normalization happens **at compare time, not at write time**. Descriptions stay
+verbatim as the bank sent them, and every already-stored pattern is repaired
+without a data migration.
+
+`normalizeForMatch` is shared because three places compare patterns and must
+never disagree: `ruleEngine.ts` (applies them), `lib/lineItemRules.ts` (shows
+which rule matched), and `RulesPanel.tsx` (search). `lineItems.acceptAndCreateRules`
+uses `patternsAreEquivalent` for its dedupe check for the same reason.
+
+An empty or all-whitespace pattern matches **nothing** — otherwise it would
+match every description and hijack an entire import.
 
 ### Longest Match Resolution
 
@@ -41,7 +71,10 @@ Example:
 - Rule A: `"THRIFTY"` -> Groceries
 - Rule B: `"THRIFTY FOODS"` -> Groceries
 - Description: `"THRIFTY FOODS #9461"`
-- Result: Rule B wins (14 chars vs 7 chars)
+- Result: Rule B wins (13 chars vs 7 chars)
+
+Length is measured on the **normalized** pattern, so padding cannot inflate a
+rule's precedence.
 
 ### Conflict Handling
 

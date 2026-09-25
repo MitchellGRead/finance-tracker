@@ -19,3 +19,9 @@ export {
   hasShadowSuggestion,
   isDefaultSplitRatio,
 } from "./suggestions";
+export {
+  normalizeForMatch,
+  descriptionMatchesPattern,
+  patternMatchLength,
+  patternsAreEquivalent,
+} from "./matching";

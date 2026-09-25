@@ -13,6 +13,7 @@ import {
 } from "./ui/select";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import type { RuleType } from "@finance-tracker/shared";
+import { descriptionMatchesPattern } from "@finance-tracker/shared";
 
 interface RulesPanelProps {
   searchFilter?: string;
@@ -146,8 +147,9 @@ export function RulesPanel({ searchFilter = "" }: RulesPanelProps) {
   const filteredRules = rulesQuery.data?.filter((r) => {
     if (r.ruleType !== ruleType) return false;
     if (searchFilter) {
-      const search = searchFilter.toLowerCase();
-      return search.includes(r.pattern.toLowerCase());
+      // The search box takes a pasted description and shows the rules that
+      // would fire for it, so it must use the same matcher the engine does.
+      return descriptionMatchesPattern(searchFilter, r.pattern);
     }
     return true;
   });

@@ -3,6 +3,11 @@
  * Moved out of LineItemsTable so they can be tested and shared; none need React.
  */
 
+import {
+  descriptionMatchesPattern,
+  patternMatchLength,
+} from "@finance-tracker/shared";
+
 export interface MatchedRule {
   pattern: string;
   action: string | null;
@@ -21,8 +26,6 @@ export function findMatchingRule(
   }>,
   itemUserId: number
 ): MatchedRule | null {
-  const descLower = description.toLowerCase();
-
   // Filter applicable rules: split rules + personal rules for this user
   const applicable = allRules.filter(
     (r) =>
@@ -35,14 +38,12 @@ export function findMatchingRule(
   let bestLen = 0;
   let bestIsPersonal = false;
   for (const rule of applicable) {
-    if (!descLower.includes(rule.pattern.toLowerCase())) continue;
+    if (!descriptionMatchesPattern(description, rule.pattern)) continue;
     const isPersonal = rule.ruleType === "personal";
-    if (
-      rule.pattern.length > bestLen ||
-      (rule.pattern.length === bestLen && isPersonal && !bestIsPersonal)
-    ) {
+    const len = patternMatchLength(rule.pattern);
+    if (len > bestLen || (len === bestLen && isPersonal && !bestIsPersonal)) {
       best = rule;
-      bestLen = rule.pattern.length;
+      bestLen = len;
       bestIsPersonal = isPersonal;
     }
   }
