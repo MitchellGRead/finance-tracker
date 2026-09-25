@@ -68,6 +68,14 @@ finance-tracker/
 - Secrets stay server-side; the client learns whether a feature is on via a
   tRPC query, never the key itself
 
+### Rules
+- Pattern matching is case- **and whitespace-**insensitive; both sides go through
+  `normalizeForMatch` (`packages/shared/src/matching.ts`). Statement descriptions
+  are fixed-width dumps (`"WISPR                   SAN FRANCISCO"`) but every UI
+  collapses that whitespace, so a raw `includes()` fails silently on patterns the
+  operator sees as correct. Never compare a pattern to a description directly.
+- See `.documentation/SOP/rule-engine.md`
+
 ### AI suggestions
 - TypeSafe Jev suggests a category and personal/shared for pending items
 - Suggestions are *shadow* values, materialized only on accept; rules always win

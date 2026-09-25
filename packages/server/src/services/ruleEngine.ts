@@ -1,7 +1,11 @@
 import { db } from "../db";
 import { rules, categories, lineItems } from "../db/schema";
 import { eq } from "drizzle-orm";
-import { PERSONAL_SPLIT_RATIO } from "@finance-tracker/shared";
+import {
+  PERSONAL_SPLIT_RATIO,
+  descriptionMatchesPattern,
+  patternMatchLength,
+} from "@finance-tracker/shared";
 
 interface RuleMatch<T> {
   rule: T;
@@ -9,10 +13,11 @@ interface RuleMatch<T> {
 }
 
 /**
- * Find the best matching rule for a description using case-insensitive
- * substring matching. Longest pattern wins. Personal rules win over split
- * rules at equal pattern length. If multiple rules of the same type match
- * with the same length, first-created wins and `hasConflict` is set.
+ * Find the best matching rule for a description using case- and
+ * whitespace-insensitive substring matching. Longest pattern wins. Personal
+ * rules win over split rules at equal pattern length. If multiple rules of the
+ * same type match with the same length, first-created wins and `hasConflict`
+ * is set.
  */
 function findBestMatch<
   T extends { pattern: string; createdAt: string; ruleType?: string },
@@ -20,12 +25,11 @@ function findBestMatch<
   description: string,
   ruleList: T[]
 ): { match: T | null; hasConflict: boolean } {
-  const descLower = description.toLowerCase();
   const matches: RuleMatch<T>[] = [];
 
   for (const rule of ruleList) {
-    if (descLower.includes(rule.pattern.toLowerCase())) {
-      matches.push({ rule, patternLength: rule.pattern.length });
+    if (descriptionMatchesPattern(description, rule.pattern)) {
+      matches.push({ rule, patternLength: patternMatchLength(rule.pattern) });
     }
   }
 

@@ -8,6 +8,7 @@ import {
   GLOBAL_DEFAULT_SPLIT_RATIO,
   LineItemStatus,
   PERSONAL_SPLIT_RATIO,
+  patternsAreEquivalent,
 } from "@finance-tracker/shared";
 import { applyRulesToLineItems } from "../services/ruleEngine";
 import {
@@ -335,7 +336,7 @@ export const lineItemsRouter = router({
         .all()
         .find(
           (r) =>
-            r.pattern.toLowerCase() === input.pattern.toLowerCase() &&
+            patternsAreEquivalent(r.pattern, input.pattern) &&
             r.ruleType === input.ruleType &&
             (input.ruleType === "split" || r.userId === input.userId)
         );
