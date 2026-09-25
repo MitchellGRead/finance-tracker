@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Label } from "./ui/label";
+import { Sparkles } from "lucide-react";
 
 interface ImportPanelProps {
   month: number;
@@ -29,6 +30,18 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
+
+  // Suggestions run detached on the server after import, so poll the run for
+  // progress rather than holding the upload mutation open for ~25s.
+  const [suggestionRunId, setSuggestionRunId] = useState<string | null>(null);
+  const suggestionRunQuery = useQuery({
+    ...trpc.suggestions.runStatus.queryOptions({ runId: suggestionRunId ?? "" }),
+    enabled: suggestionRunId !== null,
+    refetchInterval: (query) =>
+      query.state.data?.finishedAt == null ? 2000 : false,
+  });
+  const suggestionRun =
+    suggestionRunId === null ? null : (suggestionRunQuery.data ?? null);
 
   const getUserId = (name: string) =>
     usersQuery.data?.find((u) => u.name === name)?.id;
@@ -88,7 +101,7 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
     for (let i = 0; i < files.length; i++) {
       setProgress({ current: i + 1, total: files.length });
       const content = await files[i].text();
-      await uploadMutation.mutateAsync({
+      const result = await uploadMutation.mutateAsync({
         userId,
         sourceType,
         fileName: files[i].name,
@@ -96,6 +109,7 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
         periodMonth: month,
         periodYear: year,
       });
+      if (result.suggestionRunId) setSuggestionRunId(result.suggestionRunId);
     }
 
     setFiles([]);
@@ -216,6 +230,27 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
           >
             Clear all
           </Button>
+        </div>
+      )}
+
+      {suggestionRun != null && (
+        <div className="mt-3 flex items-center gap-2 rounded-md border border-cyan-300 bg-cyan-50 px-2 py-1.5 text-xs text-cyan-700">
+          <Sparkles
+            className={`h-3 w-3 ${suggestionRun.finishedAt === null ? "animate-pulse" : ""}`}
+            aria-hidden
+          />
+          {suggestionRun.finishedAt === null ? (
+            <span>
+              Jev is reviewing {suggestionRun.total} item
+              {suggestionRun.total === 1 ? "" : "s"} — {suggestionRun.done} done
+            </span>
+          ) : (
+            <span>
+              Jev suggested {suggestionRun.done} of {suggestionRun.total} items
+              {suggestionRun.failed > 0 && ` (${suggestionRun.failed} failed)`}
+              {suggestionRun.error !== null && ` — ${suggestionRun.error}`}
+            </span>
+          )}
         </div>
       )}
 

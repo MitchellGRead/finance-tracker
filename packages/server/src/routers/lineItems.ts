@@ -1,13 +1,23 @@
 import { z } from "zod";
 import { eq, desc, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
 import { lineItems, categories, statements, rules } from "../db/schema";
 import {
   GLOBAL_DEFAULT_SPLIT_RATIO,
+  LineItemStatus,
   PERSONAL_SPLIT_RATIO,
 } from "@finance-tracker/shared";
 import { applyRulesToLineItems } from "../services/ruleEngine";
+import {
+  clearSuggestions,
+  confirmSuggestions,
+} from "../services/suggestionEngine";
+
+// The suggested category needs its own join: `categories` is already taken by
+// the item's real category.
+const suggestedCategories = alias(categories, "suggested_categories");
 
 export const lineItemsRouter = router({
   list: publicProcedure
@@ -39,12 +49,24 @@ export const lineItemsRouter = router({
           isManual: lineItems.isManual,
           isCredit: lineItems.isCredit,
           sourceType: statements.sourceType,
+          suggestedCategoryId: lineItems.suggestedCategoryId,
+          suggestedCategoryName: suggestedCategories.name,
+          suggestedCategoryConfidence: lineItems.suggestedCategoryConfidence,
+          suggestedSplitRatio: lineItems.suggestedSplitRatio,
+          suggestedSplitConfidence: lineItems.suggestedSplitConfidence,
+          suggestionStatus: lineItems.suggestionStatus,
+          suggestionModel: lineItems.suggestionModel,
+          suggestedAt: lineItems.suggestedAt,
           createdAt: lineItems.createdAt,
           updatedAt: lineItems.updatedAt,
         })
         .from(lineItems)
         .leftJoin(categories, eq(lineItems.categoryId, categories.id))
         .leftJoin(statements, eq(lineItems.statementId, statements.id))
+        .leftJoin(
+          suggestedCategories,
+          eq(lineItems.suggestedCategoryId, suggestedCategories.id)
+        )
         .orderBy(desc(lineItems.date));
 
       return allItems.filter((item) => {
@@ -90,12 +112,18 @@ export const lineItemsRouter = router({
     )
     .mutation(async ({ input }) => {
       const { id, ...updates } = input;
-      return db
-        .update(lineItems)
-        .set(updates)
-        .where(eq(lineItems.id, id))
-        .returning()
-        .get();
+      db.update(lineItems).set(updates).where(eq(lineItems.id, id)).run();
+
+      // Accepting an item confirms any untouched AI suggestion on it. A manual
+      // category or split edit needs no handling here: writing a real value is
+      // what makes the shadow predicate false.
+      if (input.status === LineItemStatus.ACCEPTED) {
+        confirmSuggestions([id]);
+      }
+
+      // Re-read rather than .returning() — confirmSuggestions may have written
+      // to the row after the update above.
+      return db.select().from(lineItems).where(eq(lineItems.id, id)).get();
     }),
 
   bulkUpdateStatus: publicProcedure
@@ -112,6 +140,11 @@ export const lineItemsRouter = router({
           .where(eq(lineItems.id, id))
           .run();
       }
+
+      if (input.status === LineItemStatus.ACCEPTED) {
+        confirmSuggestions(input.ids);
+      }
+
       return { updated: input.ids.length };
     }),
 
@@ -146,15 +179,19 @@ export const lineItemsRouter = router({
           .run();
       }
 
-      // Re-apply rules to these items
+      // "Reset to machine defaults" resets the AI's guess too — the operator
+      // can regenerate from the toolbar.
       const ids = overriddenItems.map((item) => item.id);
+      const suggestionsCleared = clearSuggestions(ids);
+
+      // Re-apply rules to these items
       let rulesApplied = 0;
       if (ids.length > 0) {
         const result = applyRulesToLineItems(ids);
         rulesApplied = result.applied;
       }
 
-      return { cleared: overriddenItems.length, rulesApplied };
+      return { cleared: overriddenItems.length, rulesApplied, suggestionsCleared };
     }),
 
   clearItemOverrides: publicProcedure
@@ -174,11 +211,17 @@ export const lineItemsRouter = router({
           .run();
       }
 
+      const suggestionsCleared = clearSuggestions(input.ids);
+
       const result = input.ids.length > 0
         ? applyRulesToLineItems(input.ids)
         : { applied: 0, conflicts: 0 };
 
-      return { cleared: input.ids.length, rulesApplied: result.applied };
+      return {
+        cleared: input.ids.length,
+        rulesApplied: result.applied,
+        suggestionsCleared,
+      };
     }),
 
   bulkUpdateCategory: publicProcedure
@@ -257,7 +300,15 @@ export const lineItemsRouter = router({
       const isPersonal = input.ruleType === "personal";
       const action = input.status === "accepted" ? "accept" : "reject";
 
-      // Update the line item
+      // Confirm first: the client sends the category it could see, which is null
+      // when the category only existed as a shadow suggestion. Materializing
+      // before the rule upsert is what lets an AI guess become a real rule.
+      if (input.status === LineItemStatus.ACCEPTED) {
+        confirmSuggestions([input.lineItemId]);
+      }
+
+      // Update the line item. An explicit "personal" choice is written after
+      // confirmation so the operator's decision beats the model's.
       db.update(lineItems)
         .set({
           status: input.status,
@@ -269,6 +320,13 @@ export const lineItemsRouter = router({
         })
         .where(eq(lineItems.id, input.lineItemId))
         .run();
+
+      const item = db
+        .select()
+        .from(lineItems)
+        .where(eq(lineItems.id, input.lineItemId))
+        .get();
+      const ruleCategoryId = input.categoryId ?? item?.categoryId ?? null;
 
       // Find existing rule with same pattern + scope
       const existing = db
@@ -287,7 +345,7 @@ export const lineItemsRouter = router({
         db.update(rules)
           .set({
             action,
-            ...(input.categoryId !== null && { categoryId: input.categoryId }),
+            ...(ruleCategoryId !== null && { categoryId: ruleCategoryId }),
           })
           .where(eq(rules.id, existing.id))
           .run();
@@ -299,7 +357,7 @@ export const lineItemsRouter = router({
             ruleType: input.ruleType,
             userId: isPersonal ? input.userId : null,
             action,
-            categoryId: input.categoryId,
+            categoryId: ruleCategoryId,
             createdByUserId: input.userId,
           })
           .run();

@@ -66,3 +66,23 @@ Rules are created implicitly through user actions:
 - When a user categorizes a line item that had no category, the system can prompt to create a category rule
 - When a user accepts/rejects a line item, the system can prompt to create an accept/reject rule
 - Rules can also be managed directly through a rule management panel
+
+## Relationship to AI Suggestions
+
+Rules always win. The AI suggestion layer only fills gaps rules left:
+
+- An item a rule has already accepted or rejected is never suggested on — it is
+  no longer `pending`.
+- A category a rule set makes that facet ineligible (`category_id` is non-null),
+  even though the rule does not set `category_override`.
+- A split a rule set makes that facet ineligible, detected by comparing the
+  **value** against `GLOBAL_DEFAULT_SPLIT_RATIO` — `applyRulesToLineItems` writes
+  `split_ratio` without setting `split_ratio_override`, so the flag alone would
+  miss it.
+
+Confirming a suggestion never sets an override flag, so rule re-application is
+not blocked by an AI guess. The intended end state for a recurring merchant is a
+real rule: the AI guesses once, the operator accepts and saves it as a rule, and
+it never costs a token again.
+
+See [ai-suggestions.md](./ai-suggestions.md).

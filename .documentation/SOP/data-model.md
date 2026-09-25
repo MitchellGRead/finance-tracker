@@ -41,8 +41,25 @@ Individual transactions parsed from statements or added manually.
 | status | text | 'accepted', 'rejected', or 'pending' |
 | status_override | integer | 0/1 — true if user manually changed status |
 | category_override | integer | 0/1 — true if user manually changed category |
+| split_ratio_override | integer | 0/1 — true if user manually changed the split |
 | note | text | Nullable, user-provided |
 | is_manual | integer | 0/1 — true if hand-added, not from CSV |
+| is_credit | integer | 0/1 — true for refunds and credits |
+| suggested_category_id | integer (FK -> categories) | Nullable — AI shadow value |
+| suggested_category_confidence | real | Nullable, 0-1 |
+| suggested_split_ratio | real | Nullable — AI shadow value |
+| suggested_split_confidence | real | Nullable, 0-1 |
+| suggestion_status | text | Nullable = never generated; 'shadow' \| 'confirmed' |
+| suggestion_model | text | Nullable — model that answered, e.g. 'jev-1.13.0' |
+| suggested_at | text | Nullable — ISO 8601 |
+
+The `suggested_*` columns are shadow values: never read by reports, materialized
+into `category_id` / `split_ratio` only when the item is accepted. See
+[ai-suggestions.md](./ai-suggestions.md).
+
+> Note: the rule tables documented below are out of date — `category_rules` and
+> `accept_reject_rules` were merged into a single `rules` table in migration
+> 0003. Only the `line_items` table above has been refreshed.
 
 ## Rules & Memory Tables
 

@@ -13,6 +13,21 @@ import {
   SelectValue,
 } from "./ui/select";
 import { CategoryPicker } from "./CategoryPicker";
+import { CategoryCell } from "./CategoryCell";
+import { SplitCell } from "./SplitCell";
+import { Sparkles } from "lucide-react";
+import {
+  findMatchingRule,
+  isRealOverride,
+  itemDivergesFromRule,
+  type MatchedRule,
+} from "../lib/lineItemRules";
+import {
+  getLiveSuggestion,
+  hasLiveSuggestion,
+  type LiveSuggestion,
+} from "../lib/suggestions";
+import { chunkIds } from "../lib/chunk";
 import {
   Table,
   TableBody,
@@ -28,101 +43,7 @@ interface LineItemsTableProps {
 }
 
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
-
-interface MatchedRule {
-  pattern: string;
-  action: string | null;
-  categoryName: string | null;
-  isPersonal: boolean;
-}
-
-function findMatchingRule(
-  description: string,
-  allRules: Array<{
-    pattern: string;
-    ruleType: string;
-    userId: number | null;
-    action: string | null;
-    categoryName: string | null;
-  }>,
-  itemUserId: number
-): MatchedRule | null {
-  const descLower = description.toLowerCase();
-
-  // Filter applicable rules: split rules + personal rules for this user
-  const applicable = allRules.filter(
-    (r) =>
-      r.ruleType === "split" ||
-      (r.ruleType === "personal" && r.userId === itemUserId)
-  );
-
-  // Find best match (longest pattern, personal wins at equal length)
-  let best: (typeof applicable)[number] | null = null;
-  let bestLen = 0;
-  let bestIsPersonal = false;
-  for (const rule of applicable) {
-    if (!descLower.includes(rule.pattern.toLowerCase())) continue;
-    const isPersonal = rule.ruleType === "personal";
-    if (
-      rule.pattern.length > bestLen ||
-      (rule.pattern.length === bestLen && isPersonal && !bestIsPersonal)
-    ) {
-      best = rule;
-      bestLen = rule.pattern.length;
-      bestIsPersonal = isPersonal;
-    }
-  }
-
-  if (!best) return null;
-  return {
-    pattern: best.pattern,
-    action: best.action,
-    categoryName: best.categoryName,
-    isPersonal: best.ruleType === "personal",
-  };
-}
-
-function isRealOverride(item: {
-  statusOverride: boolean;
-  status: string;
-  categoryOverride: boolean;
-  categoryId: number | null;
-  splitRatioOverride: boolean;
-  splitRatio: number;
-}): boolean {
-  if (item.statusOverride && item.status !== "pending") return true;
-  if (item.categoryOverride && item.categoryId !== null) return true;
-  if (item.splitRatioOverride && Math.abs(item.splitRatio - 0.5) > 0.001)
-    return true;
-  return false;
-}
-
-/**
- * Check whether the item's current state diverges from what the matching
- * rule would produce.
- */
-function itemDivergesFromRule(
-  item: {
-    status: string;
-    categoryName: string | null;
-    splitRatio: number;
-  },
-  rule: MatchedRule
-): boolean {
-  if (rule.action) {
-    const expectedStatus =
-      rule.action === "accept" ? "accepted" : "rejected";
-    if (item.status !== expectedStatus) return true;
-  }
-
-  if (rule.categoryName) {
-    if (item.categoryName !== rule.categoryName) return true;
-  }
-
-  if (rule.isPersonal && item.splitRatio !== 1.0) return true;
-
-  return false;
-}
+type SuggestionFilter = "all" | "has" | "none";
 
 export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const trpc = useTRPC();
@@ -133,6 +54,12 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const [editingNote, setEditingNote] = useState<number | null>(null);
   const [noteValue, setNoteValue] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [suggestionFilter, setSuggestionFilter] = useState<SuggestionFilter>("all");
+  const [suggestingIds, setSuggestingIds] = useState<Set<number>>(new Set());
+  const [suggestProgress, setSuggestProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
 
   // Rule creation popover state
   const [ruleItemId, setRuleItemId] = useState<number | null>(null);
@@ -145,6 +72,8 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     trpc.lineItems.list.queryOptions({ month, year })
   );
   const rulesQuery = useQuery(trpc.rules.list.queryOptions());
+  const suggestionsConfigQuery = useQuery(trpc.suggestions.config.queryOptions());
+  const suggestionsEnabled = suggestionsConfigQuery.data?.enabled ?? false;
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({
@@ -152,6 +81,11 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     });
     queryClient.invalidateQueries({
       queryKey: trpc.lineItems.countByMonth.queryKey(),
+    });
+    // Category edits change the picker's "Most used" section, which reads
+    // usageCounts; without this it stays stale for up to staleTime.
+    queryClient.invalidateQueries({
+      queryKey: trpc.categories.usageCounts.queryKey(),
     });
   };
 
@@ -196,11 +130,55 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     })
   );
 
+  const generateSuggestionsMutation = useMutation(
+    trpc.suggestions.generate.mutationOptions()
+  );
+
+  /**
+   * Generation is chunked and awaited sequentially: httpBatchLink would coalesce
+   * concurrent calls into one long request, losing the progressive reveal. Each
+   * chunk invalidates on its own, so partial results land as they arrive and a
+   * mid-run failure keeps everything generated so far.
+   */
+  const runSuggestions = async (ids: number[]) => {
+    if (ids.length === 0) return;
+    const chunks = chunkIds(ids, 25);
+    setSuggestProgress({ done: 0, total: ids.length });
+
+    try {
+      for (const [index, chunk] of chunks.entries()) {
+        setSuggestingIds(new Set(chunk));
+        try {
+          await generateSuggestionsMutation.mutateAsync({ ids: chunk });
+        } finally {
+          setSuggestProgress({
+            done: Math.min((index + 1) * 25, ids.length),
+            total: ids.length,
+          });
+          invalidateAll();
+        }
+      }
+    } finally {
+      setSuggestingIds(new Set());
+      setSuggestProgress(null);
+    }
+  };
+
   const items = lineItemsQuery.data ?? [];
   const allRules = rulesQuery.data ?? [];
 
   const getUserName = (userId: number) =>
     usersQuery.data?.find((u) => u.id === userId)?.name ?? "Unknown";
+
+  const categoryList = categoriesQuery.data ?? [];
+
+  const ruleFor = (item: { description: string; userId: number }): MatchedRule | null =>
+    findMatchingRule(item.description, allRules, item.userId);
+
+  const suggestionFor = (item: Parameters<typeof getLiveSuggestion>[0] & {
+    description: string;
+    userId: number;
+  }): LiveSuggestion => getLiveSuggestion(item, categoryList, ruleFor(item));
 
   const filteredItems = items.filter((item) => {
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
@@ -213,6 +191,11 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
         return false;
       }
     }
+    if (suggestionFilter !== "all") {
+      const has = hasLiveSuggestion(suggestionFor(item));
+      if (suggestionFilter === "has" && !has) return false;
+      if (suggestionFilter === "none" && has) return false;
+    }
     return true;
   });
 
@@ -221,6 +204,64 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     .map((item) => item.id);
 
   const overrideCount = items.filter((item) => isRealOverride(item)).length;
+
+  const suggestedIds = filteredItems
+    .filter((item) => hasLiveSuggestion(suggestionFor(item)))
+    .map((item) => item.id);
+
+  // Items worth spending tokens on: pending and never looked at.
+  const unsuggestedIds = filteredItems
+    .filter((item) => item.status === "pending" && item.suggestionStatus === null)
+    .map((item) => item.id);
+
+  const pendingSuggestionSet = new Set(suggestedIds);
+  const pendingSuggestionCount = pendingIds.filter((id) =>
+    pendingSuggestionSet.has(id)
+  ).length;
+
+  /** Applies category and split suggestions without touching status. */
+  const applySuggestions = (ids: number[]) => {
+    const target = new Set(ids);
+    for (const item of filteredItems) {
+      if (!target.has(item.id)) continue;
+      const suggestion = suggestionFor(item);
+      const updates: {
+        id: number;
+        categoryId?: number;
+        categoryOverride?: boolean;
+        splitRatio?: number;
+        splitRatioOverride?: boolean;
+      } = { id: item.id };
+
+      if (suggestion.category?.mode === "ghost") {
+        updates.categoryId = suggestion.category.categoryId;
+        updates.categoryOverride = true;
+      }
+      if (suggestion.split !== null) {
+        updates.splitRatio = suggestion.split.ratio;
+        updates.splitRatioOverride = true;
+      }
+      if (Object.keys(updates).length > 1) updateMutation.mutate(updates);
+    }
+  };
+
+  /**
+   * Accepting materializes every untouched suggestion on the server, so a
+   * month-wide bulk accept can commit a lot of AI guesses in one click. Confirm
+   * when that is actually what is about to happen.
+   */
+  const acceptAllPending = () => {
+    if (
+      pendingSuggestionCount > 0 &&
+      !window.confirm(
+        `Accept ${pendingIds.length} pending items?\n\nThis also applies Jev's ` +
+          `suggestions on ${pendingSuggestionCount} of them.`
+      )
+    ) {
+      return;
+    }
+    bulkUpdateMutation.mutate({ ids: pendingIds, status: "accepted" });
+  };
 
   const lastClickedId = useRef<number | null>(null);
 
@@ -377,6 +418,24 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
           </SelectContent>
         </Select>
 
+        {suggestionsEnabled && (
+          <Select
+            value={suggestionFilter}
+            onValueChange={(v) => {
+              if (v) setSuggestionFilter(v as SuggestionFilter);
+            }}
+          >
+            <SelectTrigger className="h-8 w-[150px] text-sm">
+              <SelectValue placeholder="Suggestions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Suggestions</SelectItem>
+              <SelectItem value="has">Has suggestion</SelectItem>
+              <SelectItem value="none">No suggestion</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+
         <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
           {selectedIds.size > 0 ? (
             <>
@@ -402,6 +461,21 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                   <SelectItem value="pending">Pending</SelectItem>
                 </SelectContent>
               </Select>
+              {suggestionsEnabled && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  disabled={suggestProgress !== null}
+                  title="Ask Jev for a category and split on the selected items"
+                  onClick={() => void runSuggestions(selectedArray)}
+                >
+                  <Sparkles className="h-3 w-3 mr-1" aria-hidden />
+                  {suggestProgress
+                    ? `Suggesting ${suggestProgress.done}/${suggestProgress.total}…`
+                    : "Suggest"}
+                </Button>
+              )}
               <CategoryPicker
                 onSelect={(catId) => {
                   bulkCategoryMutation.mutate({
@@ -480,25 +554,58 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                   Clear overrides ({overrideCount})
                 </Button>
               )}
+              {suggestionsEnabled && unsuggestedIds.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  disabled={suggestProgress !== null}
+                  onClick={() => void runSuggestions(unsuggestedIds)}
+                >
+                  <Sparkles className="h-3 w-3 mr-1" aria-hidden />
+                  {suggestProgress
+                    ? `Suggesting ${suggestProgress.done}/${suggestProgress.total}…`
+                    : `Suggest (${unsuggestedIds.length})`}
+                </Button>
+              )}
+              {suggestionsEnabled && suggestedIds.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  title="Apply Jev's category and split suggestions without changing status"
+                  onClick={() => applySuggestions(suggestedIds)}
+                >
+                  <Sparkles className="h-3 w-3 mr-1" aria-hidden />
+                  Apply Jev ({suggestedIds.length})
+                </Button>
+              )}
               {pendingIds.length > 0 && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-7 text-xs"
-                  onClick={() =>
-                    bulkUpdateMutation.mutate({
-                      ids: pendingIds,
-                      status: "accepted",
-                    })
-                  }
+                  onClick={() => acceptAllPending()}
                 >
                   Accept all pending ({pendingIds.length})
+                  {pendingSuggestionCount > 0 &&
+                    ` · applies ${pendingSuggestionCount} suggestion${
+                      pendingSuggestionCount === 1 ? "" : "s"
+                    }`}
                 </Button>
               )}
             </>
           )}
         </div>
       </div>
+
+      {suggestProgress !== null && (
+        <div className="flex items-center gap-2 rounded-md border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-xs text-cyan-700">
+          <Sparkles className="h-3 w-3 animate-pulse" aria-hidden />
+          Jev is reviewing {suggestProgress.total} item
+          {suggestProgress.total === 1 ? "" : "s"} — {suggestProgress.done} done
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-md border flex-1 min-h-0 overflow-y-auto">
@@ -556,13 +663,22 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                 const realOverride = hasCoverage
                   ? diverges && isRealOverride(item)
                   : isRealOverride(item);
+                const suggestion = getLiveSuggestion(item, categoryList, matchedRule);
+                const showsSuggestion = hasLiveSuggestion(suggestion);
+                const isSuggesting = suggestingIds.has(item.id);
 
                 return (
                   <TableRow
                     key={item.id}
                     className={`${
                       item.status === "rejected" ? "opacity-50" : ""
-                    } ${realOverride ? "border-l-2 border-l-blue-400" : ""}`}
+                    } ${
+                      realOverride
+                        ? "border-l-2 border-l-blue-400"
+                        : showsSuggestion
+                          ? "border-l-2 border-l-cyan-300"
+                          : ""
+                    }`}
                   >
                     {/* Checkbox */}
                     <TableCell className="px-2">
@@ -579,6 +695,23 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                       <Badge
                         variant={statusColor(item.status)}
                         className="cursor-pointer text-xs select-none"
+                        title={
+                          showsSuggestion
+                            ? `Click to cycle status — accepting also applies Jev's suggestion${
+                                suggestion.category
+                                  ? `: ${suggestion.category.categoryName}`
+                                  : ""
+                              }${
+                                suggestion.split
+                                  ? `${suggestion.category ? "," : ":"} ${
+                                      suggestion.split.isPersonal
+                                        ? "Personal"
+                                        : `${Math.round(suggestion.split.ratio * 100)}% split`
+                                    }`
+                                  : ""
+                              }`
+                            : undefined
+                        }
                         onClick={() => cycleStatus(item.id, item.status)}
                       >
                         {item.status}
@@ -644,12 +777,22 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
                     {/* Category */}
                     <TableCell>
-                      <CategoryPicker
-                        currentCategoryName={item.categoryName}
+                      <CategoryCell
+                        categoryName={item.categoryName}
+                        suggestion={suggestion.category}
+                        isSuggesting={isSuggesting}
                         onSelect={(catId) => {
                           updateMutation.mutate({
                             id: item.id,
                             categoryId: catId,
+                            categoryOverride: true,
+                          });
+                        }}
+                        onAcceptSuggestion={() => {
+                          if (suggestion.category === null) return;
+                          updateMutation.mutate({
+                            id: item.id,
+                            categoryId: suggestion.category.categoryId,
                             categoryOverride: true,
                           });
                         }}
@@ -658,65 +801,18 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
                     {/* Split ratio */}
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {item.splitRatioOverride &&
-                          Math.abs(item.splitRatio - 0.5) > 0.001 && (
-                            <span
-                              className="text-blue-500 text-[10px]"
-                              title="Override"
-                            >
-                              *
-                            </span>
-                          )}
-                        {item.splitRatio === 1.0 ? (
-                          <button
-                            className="h-7 px-2 text-[10px] rounded border bg-orange-100 border-orange-300 text-orange-700"
-                            title="Personal (100%) — click to switch to split"
-                            onClick={() =>
-                              updateMutation.mutate({
-                                id: item.id,
-                                splitRatio: 0.5,
-                                splitRatioOverride: true,
-                              })
-                            }
-                          >
-                            Personal
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-0.5">
-                            <Input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={Math.round(item.splitRatio * 100)}
-                              onChange={(e) => {
-                                const pct = parseInt(e.target.value);
-                                if (!isNaN(pct) && pct >= 0 && pct <= 100) {
-                                  updateMutation.mutate({
-                                    id: item.id,
-                                    splitRatio: pct / 100,
-                                    splitRatioOverride: true,
-                                  });
-                                }
-                              }}
-                              className="h-7 w-14 text-xs text-right px-1"
-                            />
-                            <button
-                              className="h-7 px-1 text-[10px] rounded border border-muted-foreground/20 text-muted-foreground hover:bg-orange-50 hover:text-orange-600 hover:border-orange-300"
-                              title="Mark as personal (100%)"
-                              onClick={() =>
-                                updateMutation.mutate({
-                                  id: item.id,
-                                  splitRatio: 1.0,
-                                  splitRatioOverride: true,
-                                })
-                              }
-                            >
-                              P
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      <SplitCell
+                        splitRatio={item.splitRatio}
+                        splitRatioOverride={item.splitRatioOverride}
+                        suggestion={suggestion.split}
+                        onChange={(splitRatio) =>
+                          updateMutation.mutate({
+                            id: item.id,
+                            splitRatio,
+                            splitRatioOverride: true,
+                          })
+                        }
+                      />
                     </TableCell>
 
                     {/* Note */}
@@ -787,6 +883,29 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                               </Badge>
                             )}
                           </div>
+                        )}
+
+                        {/* Jev disagrees with the value already in the cell */}
+                        {suggestion.category?.mode === "badge" && (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] px-1 py-0 border-cyan-400 text-cyan-600 cursor-pointer"
+                            title={`Jev suggests: ${suggestion.category.categoryName}${
+                              suggestion.category.confidence !== null
+                                ? ` (${Math.round(suggestion.category.confidence * 100)}%)`
+                                : ""
+                            } — click to apply`}
+                            onClick={() => {
+                              if (suggestion.category === null) return;
+                              updateMutation.mutate({
+                                id: item.id,
+                                categoryId: suggestion.category.categoryId,
+                                categoryOverride: true,
+                              });
+                            }}
+                          >
+                            J
+                          </Badge>
                         )}
 
                         {/* Save/Update Rule button */}

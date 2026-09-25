@@ -3,19 +3,40 @@ import { useTRPC } from "../lib/trpc";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Sparkles } from "lucide-react";
 
 const MOST_USED_COUNT = 5;
+
+export interface SuggestedCategory {
+  categoryId: number;
+  categoryName: string;
+  confidence: number | null;
+}
 
 interface CategoryPickerProps {
   currentCategoryName?: string | null;
   onSelect: (categoryId: number | null) => void;
-  trigger?: (props: { open: boolean; toggle: () => void }) => ReactNode;
+  /**
+   * `close` is passed through so a trigger can render its own accept control
+   * inside the picker's ref — anything outside it would register as an outside
+   * click and close the popover mid-click.
+   */
+  trigger?: (props: {
+    open: boolean;
+    toggle: () => void;
+    close: () => void;
+  }) => ReactNode;
+  /** Jev's suggestion, surfaced as its own section at the top of the list. */
+  suggested?: SuggestedCategory | null;
+  onAcceptSuggestion?: () => void;
 }
 
 export function CategoryPicker({
   currentCategoryName = null,
   onSelect,
   trigger,
+  suggested = null,
+  onAcceptSuggestion,
 }: CategoryPickerProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -137,12 +158,19 @@ export function CategoryPicker({
     </div>
   );
 
+  const acceptSuggestion = () => {
+    if (suggested === null) return;
+    if (onAcceptSuggestion) onAcceptSuggestion();
+    else onSelect(suggested.categoryId);
+    close();
+  };
+
   const toggle = () => (open ? close() : setOpen(true));
 
   return (
     <div ref={ref} className="relative">
       {trigger ? (
-        trigger({ open, toggle })
+        trigger({ open, toggle, close })
       ) : (
         <button
           className="h-7 w-full text-left text-xs px-1 rounded hover:bg-muted truncate"
@@ -161,11 +189,43 @@ export function CategoryPicker({
             placeholder="Search categories..."
             className="h-6 text-[10px] px-1.5 mb-1"
             autoFocus
-            onKeyDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter" && !search && suggested) acceptSuggestion();
+            }}
             onClick={(e) => e.stopPropagation()}
           />
 
           <div className="max-h-[300px] overflow-y-auto">
+            {/* Jev's suggestion — hide when searching, same as the unassign row */}
+            {!search && suggested && (
+              <>
+                <div className="text-[10px] text-cyan-600 px-2 pt-1 pb-0.5">
+                  Suggested by Jev
+                </div>
+                <button
+                  className="w-full flex items-center gap-1 text-left text-xs px-2 py-1.5 rounded border border-dashed border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  onClick={acceptSuggestion}
+                  title={
+                    suggested.confidence === null
+                      ? `Apply Jev's suggestion: ${suggested.categoryName}`
+                      : `Apply Jev's suggestion: ${suggested.categoryName} (${Math.round(
+                          suggested.confidence * 100
+                        )}% confidence)`
+                  }
+                >
+                  <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+                  <span className="flex-1 truncate">{suggested.categoryName}</span>
+                  {suggested.confidence !== null && (
+                    <span className="text-[10px] text-cyan-600/70 tabular-nums">
+                      {Math.round(suggested.confidence * 100)}%
+                    </span>
+                  )}
+                </button>
+                <div className="h-px bg-border my-1" />
+              </>
+            )}
+
             {/* Unassign option — hide when searching */}
             {!search && (
               <button

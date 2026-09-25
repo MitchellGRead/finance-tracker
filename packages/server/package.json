@@ -12,12 +12,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:repair-ledger": "tsx scripts/repair-migration-ledger.ts"
   },
   "dependencies": {
     "@finance-tracker/shared": "workspace:*",
     "@hono/node-server": "^1.14.3",
     "@trpc/server": "^11.1.0",
+    "@typesafe-ai/sdk": "^0.6.0",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.44.2",
     "hono": "^4.7.10",
