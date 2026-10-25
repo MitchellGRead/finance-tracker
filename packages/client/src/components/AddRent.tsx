@@ -79,10 +79,12 @@ export function AddRent({ month, year }: AddRentProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger>
-        <Button variant="outline" size="sm" className="h-8 text-sm">
-          + Rent
-        </Button>
+      <DialogTrigger
+        render={
+          <Button variant="outline" size="sm" className="h-8 text-sm" />
+        }
+      >
+        + Rent
       </DialogTrigger>
       <DialogContent className="sm:max-w-xs">
         <DialogHeader>
