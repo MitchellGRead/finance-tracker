@@ -12,7 +12,13 @@ The main operational page. Everything related to importing, reviewing, and editi
   live in the ⋯ menu
 - Main content area: line items table, full width
 
-### Import Dialog
+### Statements Dialog (header "Import" button)
+Two tabs. **History** lists every imported statement — file, user, dates
+covered, rows remaining (and duplicates skipped at import), import date —
+newest first; clicking one jumps to the month it ends in. "No rows" marks an
+old failed import or a statement whose months were cleared.
+
+**Import** tab:
 - Dropzone taking any number of CSVs, any months and accounts
 - Preview table, one row per file: detected institution and guessed user (both
   editable), date range, new rows, duplicates skipped, errors and possible

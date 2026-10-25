@@ -28,6 +28,13 @@ import {
 } from "lucide-react";
 import { useMonthPicker } from "./hooks/useMonthPicker";
 import { ImportPanel } from "./components/ImportPanel";
+import { StatementHistory } from "./components/StatementHistory";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "./components/ui/tabs";
 import { UserManager } from "./components/UserManager";
 import { RulesPanel } from "./components/RulesPanel";
 import { MonthCalendar } from "./components/MonthCalendar";
@@ -43,6 +50,7 @@ export function App() {
   const [page, setPage] = useState<Page>("workspace");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -72,6 +80,9 @@ export function App() {
         });
         queryClient.invalidateQueries({
           queryKey: trpc.statements.list.queryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: trpc.statements.history.queryKey(),
         });
         alert(`Cleared ${data.deleted} line items for ${label}`);
       },
@@ -158,7 +169,7 @@ export function App() {
           <div className="ml-auto flex items-center gap-1.5">
             {page === "workspace" && (
               <>
-                <Dialog>
+                <Dialog open={importOpen} onOpenChange={setImportOpen}>
                   <DialogTrigger
                     className={cn(
                       buttonVariants({ size: "sm" }),
@@ -171,9 +182,25 @@ export function App() {
                       closing the dialog mid-run. */}
                   <DialogContent keepMounted className="sm:max-w-3xl">
                     <DialogHeader>
-                      <DialogTitle>Import statements</DialogTitle>
+                      <DialogTitle>Statements</DialogTitle>
                     </DialogHeader>
-                    <ImportPanel />
+                    <Tabs defaultValue="import">
+                      <TabsList>
+                        <TabsTrigger value="import">Import</TabsTrigger>
+                        <TabsTrigger value="history">History</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="import" keepMounted className="pt-2">
+                        <ImportPanel />
+                      </TabsContent>
+                      <TabsContent value="history" className="pt-2">
+                        <StatementHistory
+                          onSelectMonth={(m, y) => {
+                            setMonthAndYear(m, y);
+                            setImportOpen(false);
+                          }}
+                        />
+                      </TabsContent>
+                    </Tabs>
                   </DialogContent>
                 </Dialog>
                 <Dialog>

@@ -89,6 +89,7 @@ export function ImportPanel() {
         queryClient.invalidateQueries({ queryKey: trpc.lineItems.list.queryKey() });
         queryClient.invalidateQueries({ queryKey: trpc.lineItems.countByMonth.queryKey() });
         queryClient.invalidateQueries({ queryKey: trpc.statements.list.queryKey() });
+        queryClient.invalidateQueries({ queryKey: trpc.statements.history.queryKey() });
         if (result.suggestionRunId) setSuggestionRunId(result.suggestionRunId);
         setEntries([]);
       },

@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, count, max, min } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { statements, lineItems } from "../db/schema";
+import { statements, lineItems, users } from "../db/schema";
 import { TRPCError } from "@trpc/server";
 import { SourceType } from "@finance-tracker/shared";
 import { reapplyRulesForPeriod } from "../services/ruleEngine";
@@ -54,6 +54,51 @@ export const statementsRouter = router({
       }
       return query;
     }),
+
+  /**
+   * Every imported statement, newest coverage first, with its owner and how
+   * many of its line items still exist (rows can be cleared month by month).
+   * Statements imported before date ranges were recorded fall back to the
+   * span of their remaining line items; their period was the old month
+   * picker's value, which doesn't describe the file.
+   */
+  history: publicProcedure.query(() => {
+    const rows = db
+      .select({
+        id: statements.id,
+        fileName: statements.fileName,
+        sourceType: statements.sourceType,
+        formatProfile: statements.formatProfile,
+        userName: users.name,
+        uploadedAt: statements.uploadedAt,
+        dateFrom: statements.dateFrom,
+        dateTo: statements.dateTo,
+        periodMonth: statements.periodMonth,
+        periodYear: statements.periodYear,
+        rowsParsed: statements.rowsParsed,
+        rowsSkippedDuplicate: statements.rowsSkippedDuplicate,
+        lineItemCount: count(lineItems.id),
+        firstItemDate: min(lineItems.date),
+        lastItemDate: max(lineItems.date),
+      })
+      .from(statements)
+      .innerJoin(users, eq(statements.userId, users.id))
+      .leftJoin(lineItems, eq(lineItems.statementId, statements.id))
+      .groupBy(statements.id)
+      .all();
+
+    return rows
+      .map(({ firstItemDate, lastItemDate, ...row }) => ({
+        ...row,
+        dateFrom: row.dateFrom ?? firstItemDate,
+        dateTo: row.dateTo ?? lastItemDate,
+      }))
+      .sort(
+        (a, b) =>
+          (b.dateTo ?? "").localeCompare(a.dateTo ?? "") ||
+          b.uploadedAt.localeCompare(a.uploadedAt)
+      );
+  }),
 
   /** Parse and dedupe a batch of files without writing anything. */
   previewImport: publicProcedure
