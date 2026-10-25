@@ -36,6 +36,13 @@
       "when": 1790000000000,
       "tag": "0004_ai_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792971160098,
+      "tag": "0005_flawless_starbolt",
+      "breakpoints": true
     }
   ]
 }

@@ -3,15 +3,28 @@ import { eq, and } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
 import { statements, lineItems } from "../db/schema";
-import { parseCsv } from "../parsers";
-import { GLOBAL_DEFAULT_SPLIT_RATIO } from "@finance-tracker/shared";
+import { TRPCError } from "@trpc/server";
+import { SourceType } from "@finance-tracker/shared";
+import { reapplyRulesForPeriod } from "../services/ruleEngine";
 import {
-  applyRulesToLineItems,
-  reapplyRulesForPeriod,
-} from "../services/ruleEngine";
-import { startSuggestionRun } from "../services/suggestionEngine";
-import { isSuggestionsEnabled } from "../services/typesafeClient";
-import { config } from "../lib/config";
+  commitImportBatch,
+  ImportRejectedError,
+  planImportBatch,
+  summarizePlan,
+} from "../services/importStatements";
+
+const importBatchInput = z.object({
+  files: z
+    .array(
+      z.object({
+        fileName: z.string(),
+        content: z.string(),
+        userId: z.number().nullable(),
+        institution: z.enum([SourceType.AMEX, SourceType.TD]).nullable(),
+      })
+    )
+    .min(1),
+});
 
 export const statementsRouter = router({
   list: publicProcedure
@@ -42,74 +55,23 @@ export const statementsRouter = router({
       return query;
     }),
 
-  upload: publicProcedure
-    .input(
-      z.object({
-        userId: z.number(),
-        sourceType: z.enum(["amex", "td"]),
-        fileName: z.string(),
-        content: z.string(),
-        periodMonth: z.number().min(1).max(12),
-        periodYear: z.number(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const parsed = parseCsv(input.content, input.sourceType);
+  /** Parse and dedupe a batch of files without writing anything. */
+  previewImport: publicProcedure
+    .input(importBatchInput)
+    .mutation(({ input }) => planImportBatch(input.files).map(summarizePlan)),
 
-      const statement = db
-        .insert(statements)
-        .values({
-          userId: input.userId,
-          sourceType: input.sourceType,
-          fileName: input.fileName,
-          periodMonth: input.periodMonth,
-          periodYear: input.periodYear,
-        })
-        .returning()
-        .get();
-
-      let rulesApplied = 0;
-      let ruleConflicts = 0;
-      let suggestionRunId: string | null = null;
-
-      if (parsed.length > 0) {
-        const inserted = db
-          .insert(lineItems)
-          .values(
-            parsed.map((item) => ({
-              statementId: statement.id,
-              userId: input.userId,
-              date: item.date,
-              description: item.description,
-              amount: item.amount,
-              splitRatio: GLOBAL_DEFAULT_SPLIT_RATIO,
-              status: "pending" as const,
-              isCredit: item.isCredit,
-            }))
-          )
-          .returning({ id: lineItems.id })
-          .all();
-
-        const insertedIds = inserted.map((row) => row.id);
-        const ruleResult = applyRulesToLineItems(insertedIds);
-        rulesApplied = ruleResult.applied;
-        ruleConflicts = ruleResult.conflicts;
-
-        // Detached: a 200-item batch takes ~25s, far too long to hold the
-        // mutation open. Rules have already run, so only the gaps they left are
-        // eligible. An inference failure can never fail the import.
-        if (config.typesafe.suggestOnImport && isSuggestionsEnabled()) {
-          suggestionRunId = startSuggestionRun(insertedIds).runId;
+  /** Import a batch atomically; rejects it whole if any file has an error. */
+  commitImport: publicProcedure
+    .input(importBatchInput)
+    .mutation(({ input }) => {
+      try {
+        return commitImportBatch(input.files);
+      } catch (error) {
+        if (error instanceof ImportRejectedError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
         }
+        throw error;
       }
-
-      return {
-        statement,
-        lineItemCount: parsed.length,
-        rulesApplied,
-        ruleConflicts,
-        suggestionRunId,
-      };
     }),
 
   reapplyRules: publicProcedure

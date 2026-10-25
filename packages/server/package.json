@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:repair-ledger": "tsx scripts/repair-migration-ledger.ts"
+    "db:repair-ledger": "tsx scripts/repair-migration-ledger.ts",
+    "db:backfill-fingerprints": "tsx scripts/backfill-fingerprints.ts"
   },
   "dependencies": {
     "@finance-tracker/shared": "workspace:*",
@@ -23,10 +24,12 @@
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.44.2",
     "hono": "^4.7.10",
+    "papaparse": "5.5.3",
     "zod": "^3.24.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/papaparse": "5.3.16",
     "drizzle-kit": "^0.31.5",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",

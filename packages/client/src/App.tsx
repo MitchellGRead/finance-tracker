@@ -169,11 +169,11 @@ export function App() {
                   </DialogTrigger>
                   {/* keepMounted so queued files and Jev's progress survive
                       closing the dialog mid-run. */}
-                  <DialogContent keepMounted className="sm:max-w-md">
+                  <DialogContent keepMounted className="sm:max-w-3xl">
                     <DialogHeader>
-                      <DialogTitle>Import Statement — {label}</DialogTitle>
+                      <DialogTitle>Import statements</DialogTitle>
                     </DialogHeader>
-                    <ImportPanel month={month} year={year} />
+                    <ImportPanel />
                   </DialogContent>
                 </Dialog>
                 <Dialog>

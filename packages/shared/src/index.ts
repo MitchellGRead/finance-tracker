@@ -25,3 +25,5 @@ export {
   patternMatchLength,
   patternsAreEquivalent,
 } from "./matching";
+export type { FingerprintInput } from "./fingerprint";
+export { computeFingerprint } from "./fingerprint";

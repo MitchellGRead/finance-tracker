@@ -7,7 +7,9 @@
     "build": "pnpm run --parallel build",
     "test": "pnpm -r test",
     "db:generate": "pnpm --filter @finance-tracker/server db:generate",
-    "db:migrate": "pnpm --filter @finance-tracker/server db:migrate"
+    "db:migrate": "pnpm --filter @finance-tracker/server db:migrate",
+    "db:repair-ledger": "pnpm --filter @finance-tracker/server db:repair-ledger",
+    "db:backfill-fingerprints": "pnpm --filter @finance-tracker/server db:backfill-fingerprints"
   },
   "engines": {
     "node": ">=24 <25"

@@ -39,6 +39,7 @@ const item = (overrides: Partial<LineItemRow> & Pick<LineItemRow, "userId" | "am
   note: overrides.note ?? null,
   isManual: overrides.isManual ?? false,
   isCredit: overrides.isCredit ?? false,
+  fingerprint: overrides.fingerprint ?? null,
   suggestedCategoryId: overrides.suggestedCategoryId ?? null,
   suggestedCategoryConfidence: overrides.suggestedCategoryConfidence ?? null,
   suggestedSplitRatio: overrides.suggestedSplitRatio ?? null,

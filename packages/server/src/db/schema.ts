@@ -27,8 +27,16 @@ export const statements = sqliteTable("statements", {
   uploadedAt: text("uploaded_at")
     .notNull()
     .default(sql`(datetime('now'))`),
+  // Month of `dateTo` — a statement usually spans two months; its line items
+  // are bucketed by their own dates, not by this.
   periodMonth: int("period_month").notNull(),
   periodYear: int("period_year").notNull(),
+  // Null on statements imported before format detection existed.
+  dateFrom: text("date_from"),
+  dateTo: text("date_to"),
+  formatProfile: text("format_profile"), // 'amex' | 'td_mdy' | 'td_iso'
+  rowsParsed: int("rows_parsed"),
+  rowsSkippedDuplicate: int("rows_skipped_duplicate"),
   ...timestamps,
 });
 
@@ -63,6 +71,10 @@ export const lineItems = sqliteTable("line_items", {
   note: text("note"),
   isManual: int("is_manual", { mode: "boolean" }).notNull().default(false),
   isCredit: int("is_credit", { mode: "boolean" }).notNull().default(false),
+  // Import identity (computeFingerprint in shared), fixed at import time.
+  // Not unique: identical same-day transactions are legal. Null for manual
+  // items and for rows imported before dedupe existed.
+  fingerprint: text("fingerprint"),
   // AI suggestions (shadow values — see .documentation/SOP/ai-suggestions.md).
   // Never read by reports; materialized into categoryId/splitRatio on accept.
   suggestedCategoryId: int("suggested_category_id").references(() => categories.id),
