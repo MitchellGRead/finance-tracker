@@ -7,15 +7,18 @@ Two-page layout. Minimal navigation — most work happens on a single page.
 The main operational page. Everything related to importing, reviewing, and editing line items lives here.
 
 ### Layout
-- Top bar with page navigation (Workspace / Reports) and month/year selector
-- Main content area: line items table
-- Sidebar or collapsible panels for import and rule management
+- Top bar: page navigation (Workspace / Reports), month picker (popover), and
+  actions — Import and Rules open dialogs; Users, Re-apply rules and Clear month
+  live in the ⋯ menu
+- Main content area: line items table, full width
 
-### Import Panel
-- File upload dropzone
-- Source type selector (American Express / TD)
-- User assignment dropdown
-- Import button — triggers parse, rule application, and insert
+### Import Dialog
+- Dropzone taking any number of CSVs, any months and accounts
+- Preview table, one row per file: detected institution and guessed user (both
+  editable), date range, new rows, duplicates skipped, errors and possible
+  duplicates
+- "Import all" — one transaction for the batch, then rule application and AI
+  suggestions. See [csv-formats.md](./csv-formats.md) for detection and dedupe
 
 ### Line Items Table
 The central UI element. Displays all line items for the selected month.

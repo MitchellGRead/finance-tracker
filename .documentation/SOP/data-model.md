@@ -22,8 +22,13 @@ Represents a single uploaded CSV file.
 | source_type | text | 'amex' or 'td' |
 | file_name | text | Original filename |
 | uploaded_at | text | ISO 8601 timestamp |
-| period_month | integer | 1-12 |
+| period_month | integer | 1-12 — month of `date_to` (line items are bucketed by their own dates) |
 | period_year | integer | e.g., 2025 |
+| date_from | text | Nullable — first row's date; null on pre-detection imports |
+| date_to | text | Nullable — last row's date |
+| format_profile | text | Nullable — 'amex' \| 'td_mdy' \| 'td_iso' |
+| rows_parsed | integer | Nullable — rows read from the file |
+| rows_skipped_duplicate | integer | Nullable — rows already stored (overlap) |
 
 ### line_items
 Individual transactions parsed from statements or added manually.
@@ -45,6 +50,7 @@ Individual transactions parsed from statements or added manually.
 | note | text | Nullable, user-provided |
 | is_manual | integer | 0/1 — true if hand-added, not from CSV |
 | is_credit | integer | 0/1 — true for refunds and credits |
+| fingerprint | text | Nullable — import identity for dedupe, not unique; null for manual items. See [csv-formats.md](./csv-formats.md#deduplication) |
 | suggested_category_id | integer (FK -> categories) | Nullable — AI shadow value |
 | suggested_category_confidence | real | Nullable, 0-1 |
 | suggested_split_ratio | real | Nullable — AI shadow value |
