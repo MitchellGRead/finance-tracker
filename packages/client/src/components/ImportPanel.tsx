@@ -118,11 +118,7 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
   };
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-foreground mb-3">
-        Import Statement
-      </h3>
-
+    <div>
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div>
           <Label className="text-xs mb-1">Source</Label>
@@ -132,7 +128,7 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
               if (v) setSourceType(v as "amex" | "td");
             }}
           >
-            <SelectTrigger className="h-8 text-sm">
+            <SelectTrigger className="h-8 w-full text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -150,7 +146,7 @@ export function ImportPanel({ month, year }: ImportPanelProps) {
               if (v) setUserName(v);
             }}
           >
-            <SelectTrigger className="h-8 text-sm">
+            <SelectTrigger className="h-8 w-full text-sm">
               <SelectValue placeholder="Select user" />
             </SelectTrigger>
             <SelectContent>

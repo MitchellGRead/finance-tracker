@@ -22,9 +22,7 @@ export function UserManager() {
   );
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-foreground mb-3">Users</h3>
-
+    <div>
       <div className="flex flex-wrap gap-1.5 mb-3">
         {usersQuery.data?.map((user) => (
           <Badge key={user.id} variant="secondary">

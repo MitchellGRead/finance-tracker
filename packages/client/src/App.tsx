@@ -1,8 +1,31 @@
 import { useState } from "react";
 import { useTRPC } from "./lib/trpc";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, buttonVariants } from "./components/ui/button";
+import { cn } from "./lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "./components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "./components/ui/popover";
+import {
+  ChevronDown,
+  MoreHorizontal,
+} from "lucide-react";
 import { useMonthPicker } from "./hooks/useMonthPicker";
 import { ImportPanel } from "./components/ImportPanel";
 import { UserManager } from "./components/UserManager";
@@ -18,9 +41,12 @@ type Page = "workspace" | "reports";
 export function App() {
   const { month, year, label, setMonthAndYear } = useMonthPicker();
   const [page, setPage] = useState<Page>("workspace");
-  const [ruleSearch, setRuleSearch] = useState("");
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [usersOpen, setUsersOpen] = useState(false);
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+
+  const rulesQuery = useQuery(trpc.rules.list.queryOptions());
 
   const reapplyMutation = useMutation(
     trpc.statements.reapplyRules.mutationOptions({
@@ -80,9 +106,9 @@ export function App() {
     <div className="flex flex-col h-screen bg-background">
       {/* Top bar */}
       <header className="border-b bg-card px-6 py-3">
-        <div className="mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-bold text-foreground">
+        <div className="mx-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex items-center gap-3">
+            <h1 className="whitespace-nowrap text-base font-bold text-foreground">
               Finance Tracker
             </h1>
             <div className="flex gap-1">
@@ -105,11 +131,70 @@ export function App() {
             </div>
           </div>
 
-          <span className="text-sm font-medium text-foreground">{label}</span>
+          <Popover open={monthPickerOpen} onOpenChange={setMonthPickerOpen}>
+            <PopoverTrigger
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "sm" }),
+                "h-7 gap-1 text-sm font-medium"
+              )}
+            >
+              {label}
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </PopoverTrigger>
+            <PopoverContent className="w-64">
+              <MonthCalendar
+                month={month}
+                year={year}
+                onSelect={(m, y) => {
+                  setMonthAndYear(m, y);
+                  // Year arrows also call onSelect; only a month click
+                  // should dismiss the picker.
+                  if (y === year) setMonthPickerOpen(false);
+                }}
+              />
+            </PopoverContent>
+          </Popover>
 
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5">
             {page === "workspace" && (
               <>
+                <Dialog>
+                  <DialogTrigger
+                    className={cn(
+                      buttonVariants({ size: "sm" }),
+                      "h-8 text-sm"
+                    )}
+                  >
+                    Import
+                  </DialogTrigger>
+                  {/* keepMounted so queued files and Jev's progress survive
+                      closing the dialog mid-run. */}
+                  <DialogContent keepMounted className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Import Statement — {label}</DialogTitle>
+                    </DialogHeader>
+                    <ImportPanel month={month} year={year} />
+                  </DialogContent>
+                </Dialog>
+                <Dialog>
+                  <DialogTrigger
+                    className={cn(
+                      buttonVariants({ variant: "outline", size: "sm" }),
+                      "h-8 gap-1.5 text-sm"
+                    )}
+                  >
+                    Rules
+                    <span className="text-xs text-muted-foreground">
+                      {rulesQuery.data?.length ?? 0}
+                    </span>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Rules</DialogTitle>
+                    </DialogHeader>
+                    <RulesPanel />
+                  </DialogContent>
+                </Dialog>
                 <Button
                   variant="outline"
                   size="sm"
@@ -121,26 +206,48 @@ export function App() {
                     ? "Generating..."
                     : "Generate Report"}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-sm"
-                  onClick={() => reapplyMutation.mutate({ month, year })}
-                  disabled={reapplyMutation.isPending}
-                >
-                  {reapplyMutation.isPending ? "Applying..." : "Re-apply Rules"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-sm text-destructive hover:text-destructive"
-                  onClick={handleClearMonth}
-                  disabled={clearMonthMutation.isPending}
-                >
-                  Clear Month
-                </Button>
                 <AddLineItem month={month} year={year} />
                 <AddRent month={month} year={year} />
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className={cn(
+                      buttonVariants({ variant: "outline", size: "sm" }),
+                      "h-8 w-8 p-0"
+                    )}
+                    aria-label="More actions"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuItem onClick={() => setUsersOpen(true)}>
+                      Manage users
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => reapplyMutation.mutate({ month, year })}
+                      disabled={reapplyMutation.isPending}
+                    >
+                      {reapplyMutation.isPending
+                        ? "Applying..."
+                        : "Re-apply rules"}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={handleClearMonth}
+                      disabled={clearMonthMutation.isPending}
+                    >
+                      Clear {label}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Dialog open={usersOpen} onOpenChange={setUsersOpen}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Users</DialogTitle>
+                    </DialogHeader>
+                    <UserManager />
+                  </DialogContent>
+                </Dialog>
               </>
             )}
           </div>
@@ -150,34 +257,9 @@ export function App() {
       {/* Main content */}
       {page === "workspace" ? (
         <div className="flex-1 min-h-0 px-6 py-4">
-          <div className="flex gap-4 h-full">
-            {/* Left panel — ~1/3 width */}
-            <aside className="w-1/3 shrink-0 space-y-4">
-              {/* Top row: Month, Users, Import */}
-              <div className="grid grid-cols-3 gap-3">
-                <MonthCalendar
-                  month={month}
-                  year={year}
-                  onSelect={setMonthAndYear}
-                />
-                <UserManager />
-                <ImportPanel month={month} year={year} />
-              </div>
-              {/* Rules panels */}
-              <Input
-                value={ruleSearch}
-                onChange={(e) => setRuleSearch(e.target.value)}
-                placeholder="Search rules by description..."
-                className="h-7 text-xs"
-              />
-              <RulesPanel searchFilter={ruleSearch} />
-            </aside>
-
-            {/* Line items table — remaining ~2/3 */}
-            <main className="flex-1 min-w-0 flex flex-col">
-              <LineItemsTable month={month} year={year} />
-            </main>
-          </div>
+          <main className="flex h-full min-w-0 flex-col">
+            <LineItemsTable month={month} year={year} />
+          </main>
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">

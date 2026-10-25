@@ -15,10 +15,6 @@ import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import type { RuleType } from "@finance-tracker/shared";
 import { descriptionMatchesPattern } from "@finance-tracker/shared";
 
-interface RulesPanelProps {
-  searchFilter?: string;
-}
-
 interface EditState {
   id: number;
   pattern: string;
@@ -28,7 +24,7 @@ interface EditState {
   userName: string;
 }
 
-export function RulesPanel({ searchFilter = "" }: RulesPanelProps) {
+export function RulesPanel() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [pattern, setPattern] = useState("");
@@ -36,7 +32,7 @@ export function RulesPanel({ searchFilter = "" }: RulesPanelProps) {
   const [userName, setUserName] = useState<string>("");
   const [action, setAction] = useState<string>("accept");
   const [ruleType, setRuleType] = useState<RuleType>("split");
-  const [expanded, setExpanded] = useState(false);
+  const [searchFilter, setSearchFilter] = useState("");
   const [editing, setEditing] = useState<EditState | null>(null);
 
   const rulesQuery = useQuery(trpc.rules.list.queryOptions());
@@ -272,126 +268,122 @@ export function RulesPanel({ searchFilter = "" }: RulesPanelProps) {
   );
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
-      <button
-        className="flex w-full items-center justify-between text-sm font-semibold text-foreground"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span>Rules</span>
-        <span className="text-xs text-muted-foreground">
-          {searchFilter
-            ? `${filteredRules?.length ?? 0}/${rulesQuery.data?.length ?? 0}`
-            : `${rulesQuery.data?.length ?? 0}`}{" "}
-          rules {expanded || searchFilter ? "▾" : "▸"}
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Input
+          value={searchFilter}
+          onChange={(e) => setSearchFilter(e.target.value)}
+          placeholder="Paste a description to see which rules match..."
+          className="h-7 text-xs flex-1"
+        />
+        <span className="text-xs text-muted-foreground shrink-0">
+          {filteredRules?.length ?? 0} rule
+          {filteredRules?.length === 1 ? "" : "s"}
         </span>
-      </button>
+      </div>
 
-      {(expanded || searchFilter) && (
-        <div className="mt-3 space-y-3">
-          <Tabs
-            value={ruleType}
-            onValueChange={(v) => setRuleType(v as RuleType)}
-          >
-            <TabsList className="h-7 w-full">
-              <TabsTrigger value="split" className="text-xs flex-1">
-                Split
-              </TabsTrigger>
-              <TabsTrigger value="personal" className="text-xs flex-1">
-                Personal
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+      <Tabs
+        value={ruleType}
+        onValueChange={(v) => setRuleType(v as RuleType)}
+      >
+        <TabsList className="h-7 w-full">
+          <TabsTrigger value="split" className="text-xs flex-1">
+            Split
+          </TabsTrigger>
+          <TabsTrigger value="personal" className="text-xs flex-1">
+            Personal
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-          {filteredRules && filteredRules.length > 0 && (
-            <div className="space-y-1 max-h-[280px] overflow-y-auto">
-              {filteredRules.map((rule) =>
-                editing?.id === rule.id ? (
-                  <div
-                    key={rule.id}
-                    className="py-1.5 px-2 rounded bg-muted/50 border border-primary/20"
-                  >
-                    {renderRuleForm(
-                      editing,
-                      (field, value) =>
-                        setEditing((prev) =>
-                          prev ? { ...prev, [field]: value } : prev
-                        ),
-                      handleUpdate,
-                      "Save",
-                      updateMutation.isPending,
-                      () => setEditing(null)
-                    )}
-                  </div>
-                ) : (
-                  <div
-                    key={rule.id}
-                    className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/50 group cursor-pointer hover:bg-muted"
-                    onClick={() => startEditing(rule)}
-                  >
-                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                      {rule.action && (
-                        <Badge
-                          variant={
-                            rule.action === "reject" ? "destructive" : "default"
-                          }
-                          className="text-[10px] px-1 py-0 shrink-0"
-                        >
-                          {rule.action}
-                        </Badge>
-                      )}
-                      <span className="font-mono text-foreground truncate">
-                        {rule.pattern}
-                      </span>
-                      {rule.categoryName && (
-                        <>
-                          <span className="text-muted-foreground mx-0.5">
-                            &rarr;
-                          </span>
-                          <span className="text-muted-foreground truncate">
-                            {rule.categoryName}
-                          </span>
-                        </>
-                      )}
-                      {rule.ruleType === "personal" && rule.userId && (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] px-1 py-0 shrink-0"
-                        >
-                          {getUserName(rule.userId)}
-                        </Badge>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteMutation.mutate({ id: rule.id });
-                      }}
+      {filteredRules && filteredRules.length > 0 && (
+        <div className="space-y-1 max-h-[50vh] overflow-y-auto">
+          {filteredRules.map((rule) =>
+            editing?.id === rule.id ? (
+              <div
+                key={rule.id}
+                className="py-1.5 px-2 rounded bg-muted/50 border border-primary/20"
+              >
+                {renderRuleForm(
+                  editing,
+                  (field, value) =>
+                    setEditing((prev) =>
+                      prev ? { ...prev, [field]: value } : prev
+                    ),
+                  handleUpdate,
+                  "Save",
+                  updateMutation.isPending,
+                  () => setEditing(null)
+                )}
+              </div>
+            ) : (
+              <div
+                key={rule.id}
+                className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/50 group cursor-pointer hover:bg-muted"
+                onClick={() => startEditing(rule)}
+              >
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  {rule.action && (
+                    <Badge
+                      variant={
+                        rule.action === "reject" ? "destructive" : "default"
+                      }
+                      className="text-[10px] px-1 py-0 shrink-0"
                     >
-                      x
-                    </Button>
-                  </div>
-                )
-              )}
-            </div>
-          )}
-
-          {renderRuleForm(
-            { pattern, action, categoryName, ruleType, userName },
-            (field, value) => {
-              if (field === "pattern") setPattern(value);
-              else if (field === "action") setAction(value);
-              else if (field === "categoryName") setCategoryName(value);
-              else if (field === "ruleType") setRuleType(value as RuleType);
-              else if (field === "userName") setUserName(value);
-            },
-            handleCreate,
-            "Add",
-            createMutation.isPending
+                      {rule.action}
+                    </Badge>
+                  )}
+                  <span className="font-mono text-foreground truncate">
+                    {rule.pattern}
+                  </span>
+                  {rule.categoryName && (
+                    <>
+                      <span className="text-muted-foreground mx-0.5">
+                        &rarr;
+                      </span>
+                      <span className="text-muted-foreground truncate">
+                        {rule.categoryName}
+                      </span>
+                    </>
+                  )}
+                  {rule.ruleType === "personal" && rule.userId && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1 py-0 shrink-0"
+                    >
+                      {getUserName(rule.userId)}
+                    </Badge>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteMutation.mutate({ id: rule.id });
+                  }}
+                >
+                  x
+                </Button>
+              </div>
+            )
           )}
         </div>
+      )}
+
+      {renderRuleForm(
+        { pattern, action, categoryName, ruleType, userName },
+        (field, value) => {
+          if (field === "pattern") setPattern(value);
+          else if (field === "action") setAction(value);
+          else if (field === "categoryName") setCategoryName(value);
+          else if (field === "ruleType") setRuleType(value as RuleType);
+          else if (field === "userName") setUserName(value);
+        },
+        handleCreate,
+        "Add",
+        createMutation.isPending
       )}
     </div>
   );
