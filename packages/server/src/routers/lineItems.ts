@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
@@ -269,21 +269,29 @@ export const lineItemsRouter = router({
     .mutation(async ({ input }) => {
       const prefix = `${input.year}-${String(input.month).padStart(2, "0")}`;
       const allItems = db.select().from(lineItems).all();
-      const idsToDelete = allItems
-        .filter((item) => item.date.startsWith(prefix))
-        .map((item) => item.id);
+      const toDelete = allItems.filter((item) => item.date.startsWith(prefix));
 
-      for (const id of idsToDelete) {
-        db.delete(lineItems).where(eq(lineItems.id, id)).run();
+      for (const item of toDelete) {
+        db.delete(lineItems).where(eq(lineItems.id, item.id)).run();
       }
 
-      db.delete(statements)
-        .where(
-          sql`${statements.periodMonth} = ${input.month} AND ${statements.periodYear} = ${input.year}`
-        )
-        .run();
+      // A statement usually spans two months, so only drop the statements this
+      // left empty — deleting by period would orphan the other month's rows.
+      const touchedStatementIds = new Set(
+        toDelete.flatMap((item) => (item.statementId === null ? [] : [item.statementId]))
+      );
+      for (const statementId of touchedStatementIds) {
+        const remaining = db
+          .select({ id: lineItems.id })
+          .from(lineItems)
+          .where(eq(lineItems.statementId, statementId))
+          .get();
+        if (!remaining) {
+          db.delete(statements).where(eq(statements.id, statementId)).run();
+        }
+      }
 
-      return { deleted: idsToDelete.length };
+      return { deleted: toDelete.length };
     }),
 
   acceptAndCreateRules: publicProcedure

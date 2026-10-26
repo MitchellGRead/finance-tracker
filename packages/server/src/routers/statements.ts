@@ -1,17 +1,30 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, count, max, min } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { statements, lineItems } from "../db/schema";
-import { parseCsv } from "../parsers";
-import { GLOBAL_DEFAULT_SPLIT_RATIO } from "@finance-tracker/shared";
+import { statements, lineItems, users } from "../db/schema";
+import { TRPCError } from "@trpc/server";
+import { SourceType } from "@finance-tracker/shared";
+import { reapplyRulesForPeriod } from "../services/ruleEngine";
 import {
-  applyRulesToLineItems,
-  reapplyRulesForPeriod,
-} from "../services/ruleEngine";
-import { startSuggestionRun } from "../services/suggestionEngine";
-import { isSuggestionsEnabled } from "../services/typesafeClient";
-import { config } from "../lib/config";
+  commitImportBatch,
+  ImportRejectedError,
+  planImportBatch,
+  summarizePlan,
+} from "../services/importStatements";
+
+const importBatchInput = z.object({
+  files: z
+    .array(
+      z.object({
+        fileName: z.string(),
+        content: z.string(),
+        userId: z.number().nullable(),
+        institution: z.enum([SourceType.AMEX, SourceType.TD]).nullable(),
+      })
+    )
+    .min(1),
+});
 
 export const statementsRouter = router({
   list: publicProcedure
@@ -42,74 +55,68 @@ export const statementsRouter = router({
       return query;
     }),
 
-  upload: publicProcedure
-    .input(
-      z.object({
-        userId: z.number(),
-        sourceType: z.enum(["amex", "td"]),
-        fileName: z.string(),
-        content: z.string(),
-        periodMonth: z.number().min(1).max(12),
-        periodYear: z.number(),
+  /**
+   * Every imported statement, newest coverage first, with its owner and how
+   * many of its line items still exist (rows can be cleared month by month).
+   * Statements imported before date ranges were recorded fall back to the
+   * span of their remaining line items; their period was the old month
+   * picker's value, which doesn't describe the file.
+   */
+  history: publicProcedure.query(() => {
+    const rows = db
+      .select({
+        id: statements.id,
+        fileName: statements.fileName,
+        sourceType: statements.sourceType,
+        formatProfile: statements.formatProfile,
+        userName: users.name,
+        uploadedAt: statements.uploadedAt,
+        dateFrom: statements.dateFrom,
+        dateTo: statements.dateTo,
+        periodMonth: statements.periodMonth,
+        periodYear: statements.periodYear,
+        rowsParsed: statements.rowsParsed,
+        rowsSkippedDuplicate: statements.rowsSkippedDuplicate,
+        lineItemCount: count(lineItems.id),
+        firstItemDate: min(lineItems.date),
+        lastItemDate: max(lineItems.date),
       })
-    )
-    .mutation(async ({ input }) => {
-      const parsed = parseCsv(input.content, input.sourceType);
+      .from(statements)
+      .innerJoin(users, eq(statements.userId, users.id))
+      .leftJoin(lineItems, eq(lineItems.statementId, statements.id))
+      .groupBy(statements.id)
+      .all();
 
-      const statement = db
-        .insert(statements)
-        .values({
-          userId: input.userId,
-          sourceType: input.sourceType,
-          fileName: input.fileName,
-          periodMonth: input.periodMonth,
-          periodYear: input.periodYear,
-        })
-        .returning()
-        .get();
+    return rows
+      .map(({ firstItemDate, lastItemDate, ...row }) => ({
+        ...row,
+        dateFrom: row.dateFrom ?? firstItemDate,
+        dateTo: row.dateTo ?? lastItemDate,
+      }))
+      .sort(
+        (a, b) =>
+          (b.dateTo ?? "").localeCompare(a.dateTo ?? "") ||
+          b.uploadedAt.localeCompare(a.uploadedAt)
+      );
+  }),
 
-      let rulesApplied = 0;
-      let ruleConflicts = 0;
-      let suggestionRunId: string | null = null;
+  /** Parse and dedupe a batch of files without writing anything. */
+  previewImport: publicProcedure
+    .input(importBatchInput)
+    .mutation(({ input }) => planImportBatch(input.files).map(summarizePlan)),
 
-      if (parsed.length > 0) {
-        const inserted = db
-          .insert(lineItems)
-          .values(
-            parsed.map((item) => ({
-              statementId: statement.id,
-              userId: input.userId,
-              date: item.date,
-              description: item.description,
-              amount: item.amount,
-              splitRatio: GLOBAL_DEFAULT_SPLIT_RATIO,
-              status: "pending" as const,
-              isCredit: item.isCredit,
-            }))
-          )
-          .returning({ id: lineItems.id })
-          .all();
-
-        const insertedIds = inserted.map((row) => row.id);
-        const ruleResult = applyRulesToLineItems(insertedIds);
-        rulesApplied = ruleResult.applied;
-        ruleConflicts = ruleResult.conflicts;
-
-        // Detached: a 200-item batch takes ~25s, far too long to hold the
-        // mutation open. Rules have already run, so only the gaps they left are
-        // eligible. An inference failure can never fail the import.
-        if (config.typesafe.suggestOnImport && isSuggestionsEnabled()) {
-          suggestionRunId = startSuggestionRun(insertedIds).runId;
+  /** Import a batch atomically; rejects it whole if any file has an error. */
+  commitImport: publicProcedure
+    .input(importBatchInput)
+    .mutation(({ input }) => {
+      try {
+        return commitImportBatch(input.files);
+      } catch (error) {
+        if (error instanceof ImportRejectedError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
         }
+        throw error;
       }
-
-      return {
-        statement,
-        lineItemCount: parsed.length,
-        rulesApplied,
-        ruleConflicts,
-        suggestionRunId,
-      };
     }),
 
   reapplyRules: publicProcedure

@@ -1,38 +1,16 @@
+import Papa from "papaparse";
+
 /**
- * Simple CSV parser that handles quoted fields with commas.
- * Returns an array of string arrays (rows of fields).
+ * Split CSV content into rows of trimmed fields. Handles a UTF-8 BOM, CRLF,
+ * quoted fields containing commas or newlines, and escaped quotes. Blank lines
+ * are dropped.
+ *
+ * Only the ends of each field are trimmed: descriptions keep their internal
+ * fixed-width padding, which matching normalizes away at compare time.
  */
 export function parseCsvRows(content: string): string[][] {
-  const rows: string[][] = [];
-  const lines = content.trim().split("\n");
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    const fields: string[] = [];
-    let current = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < trimmed.length; i++) {
-      const char = trimmed[i];
-      if (char === '"') {
-        if (inQuotes && trimmed[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (char === "," && !inQuotes) {
-        fields.push(current.trim());
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-    fields.push(current.trim());
-    rows.push(fields);
-  }
-
-  return rows;
+  const result = Papa.parse<string[]>(content.replace(/^﻿/, ""), {
+    skipEmptyLines: "greedy",
+  });
+  return result.data.map((row) => row.map((field) => field.trim()));
 }

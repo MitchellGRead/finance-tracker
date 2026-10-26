@@ -76,6 +76,13 @@ finance-tracker/
   operator sees as correct. Never compare a pattern to a description directly.
 - See `.documentation/SOP/rule-engine.md`
 
+### Statement import
+- Format is detected from content (`packages/server/src/parsers/profiles.ts`);
+  a file that yields zero rows is an error, never an empty statement
+- Dedupe is **count-aware**: per fingerprint, insert `max(0, k − n)`. Never
+  "skip if exists" — identical same-day transactions are real (two fares)
+- See `.documentation/SOP/csv-formats.md`
+
 ### AI suggestions
 - TypeSafe Jev suggests a category and personal/shared for pending items
 - Suggestions are *shadow* values, materialized only on accept; rules always win

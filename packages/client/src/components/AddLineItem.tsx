@@ -89,10 +89,12 @@ export function AddLineItem({ month, year }: AddLineItemProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger>
-        <Button variant="outline" size="sm" className="h-8 text-sm">
-          + Add Item
-        </Button>
+      <DialogTrigger
+        render={
+          <Button variant="outline" size="sm" className="h-8 text-sm" />
+        }
+      >
+        + Add Item
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>

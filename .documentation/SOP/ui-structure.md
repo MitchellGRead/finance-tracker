@@ -7,15 +7,24 @@ Two-page layout. Minimal navigation — most work happens on a single page.
 The main operational page. Everything related to importing, reviewing, and editing line items lives here.
 
 ### Layout
-- Top bar with page navigation (Workspace / Reports) and month/year selector
-- Main content area: line items table
-- Sidebar or collapsible panels for import and rule management
+- Top bar: page navigation (Workspace / Reports), month picker (popover), and
+  actions — Import and Rules open dialogs; Users, Re-apply rules and Clear month
+  live in the ⋯ menu
+- Main content area: line items table, full width
 
-### Import Panel
-- File upload dropzone
-- Source type selector (American Express / TD)
-- User assignment dropdown
-- Import button — triggers parse, rule application, and insert
+### Statements Dialog (header "Import" button)
+Two tabs. **History** lists every imported statement — file, user, dates
+covered, rows remaining (and duplicates skipped at import), import date —
+newest first; clicking one jumps to the month it ends in. "No rows" marks an
+old failed import or a statement whose months were cleared.
+
+**Import** tab:
+- Dropzone taking any number of CSVs, any months and accounts
+- Preview table, one row per file: detected institution and guessed user (both
+  editable), date range, new rows, duplicates skipped, errors and possible
+  duplicates
+- "Import all" — one transaction for the batch, then rule application and AI
+  suggestions. See [csv-formats.md](./csv-formats.md) for detection and dedupe
 
 ### Line Items Table
 The central UI element. Displays all line items for the selected month.
@@ -50,21 +59,30 @@ The central UI element. Displays all line items for the selected month.
 View generated monthly snapshots and historical trends.
 
 ### Layout
-- Top bar with navigation and month selector
-- Summary cards at top (total spending, settlement amount)
-- Category breakdown table/chart
+- Month comes from the header month picker (shared with Workspace); no
+  separate calendar on this page
+- Summary cards at top (total spending, settlement amount, line items +
+  when the snapshot was generated)
+- Spending Trend chart (below the cards, above everything else)
+- Category breakdown table
 - Per-user breakdown
 - Settlement summary ("Mitchell owes Partner $X")
-- Trend section comparing to prior months
+- Trend table comparing to prior months
 
-### Month Selector
-- Dropdown or timeline showing months with generated reports
-- Quick navigation between periods
-
-### Trend Charts
-- Line/bar charts showing spending by category over time
-- Total spending trend line
-- Settlement amount over time
+### Spending Trend chart
+- One line chart, one view at a time: Household, then one tab per user.
+  A person's view is what was accepted on *their* statements (`byCategory`
+  totals), not their effective share
+- Lines: Total plus the top 7 categories, the rest folded into "Other".
+  Categories are ranked on household spend over the whole range, so a
+  category keeps its colour in every view (`--series-1..7` in `app.css`,
+  fixed order, CVD-validated)
+- Legend chips toggle lines and rescale the y-axis (turn Total off to read
+  the categories)
+- Hover shows every value for that month; click a month to open its report
+- Built from report snapshots (`reports.trend`), so it matches the reports
+  below it. A month with no generated report is a gap, not zero — regenerate
+  a month to update its point
 
 ## Design Principles
 - Clean, modern look using shadcn/ui components and Tailwind
