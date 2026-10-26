@@ -24,6 +24,8 @@ import {
 } from "./components/ui/popover";
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   MoreHorizontal,
 } from "lucide-react";
 import { useMonthPicker } from "./hooks/useMonthPicker";
@@ -46,11 +48,18 @@ import { ReportsPage } from "./components/ReportsPage";
 type Page = "workspace" | "reports";
 
 export function App() {
-  const { month, year, label, setMonthAndYear } = useMonthPicker();
+  const { month, year, label, prev, next, setMonthAndYear } = useMonthPicker();
   const [page, setPage] = useState<Page>("workspace");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [focusRuleId, setFocusRuleId] = useState<number | null>(null);
+
+  const openRule = (ruleId: number) => {
+    setFocusRuleId(ruleId);
+    setRulesOpen(true);
+  };
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -142,29 +151,51 @@ export function App() {
             </div>
           </div>
 
-          <Popover open={monthPickerOpen} onOpenChange={setMonthPickerOpen}>
-            <PopoverTrigger
-              className={cn(
-                buttonVariants({ variant: "ghost", size: "sm" }),
-                "h-7 gap-1 text-sm font-medium"
-              )}
+          <div className="flex items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              aria-label="Previous month"
+              title="Previous month"
+              onClick={prev}
             >
-              {label}
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            </PopoverTrigger>
-            <PopoverContent className="w-64">
-              <MonthCalendar
-                month={month}
-                year={year}
-                onSelect={(m, y) => {
-                  setMonthAndYear(m, y);
-                  // Year arrows also call onSelect; only a month click
-                  // should dismiss the picker.
-                  if (y === year) setMonthPickerOpen(false);
-                }}
-              />
-            </PopoverContent>
-          </Popover>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Popover open={monthPickerOpen} onOpenChange={setMonthPickerOpen}>
+              <PopoverTrigger
+                className={cn(
+                  buttonVariants({ variant: "ghost", size: "sm" }),
+                  "h-7 gap-1 text-sm font-medium"
+                )}
+              >
+                {label}
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </PopoverTrigger>
+              <PopoverContent className="w-64">
+                <MonthCalendar
+                  month={month}
+                  year={year}
+                  onSelect={(m, y) => {
+                    setMonthAndYear(m, y);
+                    // Year arrows also call onSelect; only a month click
+                    // should dismiss the picker.
+                    if (y === year) setMonthPickerOpen(false);
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              aria-label="Next month"
+              title="Next month"
+              onClick={next}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
 
           <div className="ml-auto flex items-center gap-1.5">
             {page === "workspace" && (
@@ -203,7 +234,13 @@ export function App() {
                     </Tabs>
                   </DialogContent>
                 </Dialog>
-                <Dialog>
+                <Dialog
+                  open={rulesOpen}
+                  onOpenChange={(open) => {
+                    setRulesOpen(open);
+                    if (!open) setFocusRuleId(null);
+                  }}
+                >
                   <DialogTrigger
                     className={cn(
                       buttonVariants({ variant: "outline", size: "sm" }),
@@ -219,7 +256,7 @@ export function App() {
                     <DialogHeader>
                       <DialogTitle>Rules</DialogTitle>
                     </DialogHeader>
-                    <RulesPanel />
+                    <RulesPanel focusRuleId={focusRuleId} onFocusRule={setFocusRuleId} />
                   </DialogContent>
                 </Dialog>
                 <Button
@@ -285,7 +322,7 @@ export function App() {
       {page === "workspace" ? (
         <div className="flex-1 min-h-0 px-6 py-4">
           <main className="flex h-full min-w-0 flex-col">
-            <LineItemsTable month={month} year={year} />
+            <LineItemsTable month={month} year={year} onOpenRule={openRule} />
           </main>
         </div>
       ) : (

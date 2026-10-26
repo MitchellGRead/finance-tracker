@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { rules, categories } from "../db/schema";
+import { rules, categories, lineItems } from "../db/schema";
+import { computeRuleCoverage } from "../services/ruleCoverage";
 
 export const rulesRouter = router({
   list: publicProcedure.query(async () => {
@@ -23,6 +24,20 @@ export const rulesRouter = router({
       .leftJoin(categories, eq(rules.categoryId, categories.id))
       .orderBy(rules.pattern)
       .all();
+  }),
+
+  /**
+   * Per rule: items it matches, items it wins, and the rules that beat it
+   * elsewhere. Across every stored line item, regardless of month or status.
+   */
+  coverage: publicProcedure.query(async () => {
+    return computeRuleCoverage(
+      db.select().from(rules).all(),
+      db
+        .select({ description: lineItems.description, userId: lineItems.userId })
+        .from(lineItems)
+        .all()
+    );
   }),
 
   create: publicProcedure

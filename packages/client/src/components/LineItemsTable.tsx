@@ -1,7 +1,13 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { suggestPattern } from "../lib/patterns";
+import { planRuleSave } from "@finance-tracker/shared";
+import {
+  describeSavePlan,
+  describeSaveResult,
+  type RuleNotice,
+} from "../lib/ruleSave";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -40,12 +46,27 @@ import {
 interface LineItemsTableProps {
   month: number;
   year: number;
+  /** Open the Rules dialog focused on this rule. */
+  onOpenRule: (ruleId: number) => void;
 }
 
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
 type SuggestionFilter = "all" | "has" | "none";
 
-export function LineItemsTable({ month, year }: LineItemsTableProps) {
+// Passed as `items` so each trigger shows the label, not the raw value.
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
+  all: "All Status",
+  pending: "Pending",
+  accepted: "Accepted",
+  rejected: "Rejected",
+};
+const SUGGESTION_FILTER_LABELS: Record<SuggestionFilter, string> = {
+  all: "All Suggestions",
+  has: "Has suggestion",
+  none: "No suggestion",
+};
+
+export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -65,6 +86,14 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const [ruleItemId, setRuleItemId] = useState<number | null>(null);
   const [rulePattern, setRulePattern] = useState("");
   const [ruleType, setRuleType] = useState<"split" | "personal">("split");
+  // What the last rule save did, so it is never a silent change to some
+  // other rule.
+  const [ruleNotice, setRuleNotice] = useState<RuleNotice | null>(null);
+  useEffect(() => {
+    if (!ruleNotice) return;
+    const timer = setTimeout(() => setRuleNotice(null), 10_000);
+    return () => clearTimeout(timer);
+  }, [ruleNotice]);
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
   const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
@@ -100,9 +129,6 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
       onSuccess: invalidateAll,
     })
   );
-  const clearOverridesMutation = useMutation(
-    trpc.lineItems.clearOverrides.mutationOptions({ onSuccess: invalidateAll })
-  );
   const clearItemOverridesMutation = useMutation(
     trpc.lineItems.clearItemOverrides.mutationOptions({
       onSuccess: invalidateAll,
@@ -120,12 +146,11 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   );
   const saveAsRuleMutation = useMutation(
     trpc.lineItems.acceptAndCreateRules.mutationOptions({
-      onSuccess: () => {
+      onSuccess: (result) => {
         invalidateAll();
-        queryClient.invalidateQueries({
-          queryKey: trpc.rules.list.queryKey(),
-        });
+        queryClient.invalidateQueries({ queryKey: trpc.rules.pathKey() });
         setRuleItemId(null);
+        setRuleNotice(describeSaveResult(result));
       },
     })
   );
@@ -172,6 +197,28 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
   const categoryList = categoriesQuery.data ?? [];
 
+  const userFilterLabels: Record<string, string> = {
+    all: "All Users",
+    ...Object.fromEntries((usersQuery.data ?? []).map((u) => [u.name, u.name])),
+  };
+  const categoryFilterLabels: Record<string, string> = {
+    all: "All Categories",
+    uncategorized: "Uncategorized",
+    ...Object.fromEntries(categoryList.map((c) => [String(c.id), c.name])),
+  };
+
+  const filtersActive =
+    statusFilter !== "all" ||
+    userFilter !== "all" ||
+    categoryFilter !== "all" ||
+    suggestionFilter !== "all";
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setUserFilter("all");
+    setCategoryFilter("all");
+    setSuggestionFilter("all");
+  };
+
   const ruleFor = (item: { description: string; userId: number }): MatchedRule | null =>
     findMatchingRule(item.description, allRules, item.userId);
 
@@ -203,7 +250,6 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     .filter((item) => item.status === "pending")
     .map((item) => item.id);
 
-  const overrideCount = items.filter((item) => isRealOverride(item)).length;
 
   const suggestedIds = filteredItems
     .filter((item) => hasLiveSuggestion(suggestionFor(item)))
@@ -337,12 +383,46 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const isModifiedFromDefault = (item: (typeof items)[number]) =>
     item.status !== "pending" || item.categoryId !== null;
 
-  const openRulePopover = (item: (typeof items)[number]) => {
+  const openRulePopover = (
+    item: (typeof items)[number],
+    matchedRule: MatchedRule | null
+  ) => {
     setRuleItemId(item.id);
+    if (matchedRule) {
+      // "Update Rule": edit the rule that actually covers this item. A fresh
+      // suggestPattern guess can be shorter than it (it strips trailing words,
+      // so "FIX HEALTHCARE PAY" becomes "FIX HEALTHCARE") — saving that updates
+      // or creates a broader rule the longer one still beats, so the item
+      // keeps diverging and the change never shows.
+      setRulePattern(matchedRule.pattern);
+      setRuleType(matchedRule.isPersonal ? "personal" : "split");
+      return;
+    }
     setRulePattern(suggestPattern(item.description));
     // Default to personal if item is already 100% split ratio
     setRuleType(item.splitRatio === 1.0 ? "personal" : "split");
   };
+
+  const categoryNameOf = (id: number | null) =>
+    id === null ? null : categoryList.find((c) => c.id === id)?.name ?? null;
+
+  const previewSaveRule = (item: (typeof items)[number]) =>
+    describeSavePlan(
+      planRuleSave(
+        allRules,
+        {
+          pattern: rulePattern,
+          ruleType,
+          userId: item.userId,
+          action: item.status === "rejected" ? "reject" : "accept",
+          categoryId: item.categoryId,
+        },
+        item
+      ),
+      rulePattern,
+      ruleType,
+      categoryNameOf
+    );
 
   const confirmSaveRule = (item: (typeof items)[number]) => {
     saveAsRuleMutation.mutate({
@@ -361,14 +441,15 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-3">
       {/* Filters and bulk actions */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2">
         <Select
           value={statusFilter}
+          items={STATUS_FILTER_LABELS}
           onValueChange={(v) => {
             if (v) setStatusFilter(v as StatusFilter);
           }}
         >
-          <SelectTrigger className="h-8 w-[140px] text-sm">
+          <SelectTrigger className="h-8 w-auto min-w-[112px] gap-2 text-sm">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -381,11 +462,12 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
         <Select
           value={userFilter}
+          items={userFilterLabels}
           onValueChange={(v) => {
             if (v) setUserFilter(v);
           }}
         >
-          <SelectTrigger className="h-8 w-[140px] text-sm">
+          <SelectTrigger className="h-8 w-auto min-w-[112px] gap-2 text-sm">
             <SelectValue placeholder="User" />
           </SelectTrigger>
           <SelectContent>
@@ -400,11 +482,12 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
         <Select
           value={categoryFilter}
+          items={categoryFilterLabels}
           onValueChange={(v) => {
             if (v) setCategoryFilter(v);
           }}
         >
-          <SelectTrigger className="h-8 w-[160px] text-sm">
+          <SelectTrigger className="h-8 w-auto min-w-[112px] gap-2 text-sm">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -421,11 +504,12 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
         {suggestionsEnabled && (
           <Select
             value={suggestionFilter}
+            items={SUGGESTION_FILTER_LABELS}
             onValueChange={(v) => {
               if (v) setSuggestionFilter(v as SuggestionFilter);
             }}
           >
-            <SelectTrigger className="h-8 w-[150px] text-sm">
+            <SelectTrigger className="h-8 w-auto min-w-[112px] gap-2 text-sm">
               <SelectValue placeholder="Suggestions" />
             </SelectTrigger>
             <SelectContent>
@@ -434,6 +518,17 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               <SelectItem value="none">No suggestion</SelectItem>
             </SelectContent>
           </Select>
+        )}
+
+        {filtersActive && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-sm text-muted-foreground"
+            onClick={clearFilters}
+          >
+            Clear all
+          </Button>
         )}
 
         <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
@@ -452,7 +547,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                     });
                 }}
               >
-                <SelectTrigger className="h-7 text-xs w-[100px]">
+                <SelectTrigger className="h-8 text-xs w-[100px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -465,7 +560,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  className="h-8 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
                   disabled={suggestProgress !== null}
                   title="Ask Jev for a category and split on the selected items"
                   onClick={() => void runSuggestions(selectedArray)}
@@ -487,7 +582,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 text-xs"
+                    className="h-8 text-xs"
                     onClick={toggle}
                   >
                     Category
@@ -497,7 +592,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-8 text-xs"
                 onClick={() =>
                   bulkSplitMutation.mutate({
                     ids: selectedArray,
@@ -510,7 +605,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-8 text-xs"
                 onClick={() =>
                   bulkSplitMutation.mutate({
                     ids: selectedArray,
@@ -523,7 +618,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-8 text-xs"
                 onClick={() =>
                   clearItemOverridesMutation.mutate({ ids: selectedArray })
                 }
@@ -533,7 +628,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-8 text-xs"
                 onClick={() => setSelectedIds(new Set())}
               >
                 Deselect
@@ -542,23 +637,11 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
           ) : (
             <>
               <span>{filteredItems.length} items</span>
-              {overrideCount > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() =>
-                    clearOverridesMutation.mutate({ month, year })
-                  }
-                >
-                  Clear overrides ({overrideCount})
-                </Button>
-              )}
               {suggestionsEnabled && unsuggestedIds.length > 0 && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  className="h-8 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
                   disabled={suggestProgress !== null}
                   onClick={() => void runSuggestions(unsuggestedIds)}
                 >
@@ -572,7 +655,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  className="h-8 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
                   title="Apply Jev's category and split suggestions without changing status"
                   onClick={() => applySuggestions(suggestedIds)}
                 >
@@ -584,14 +667,20 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs"
+                  className="h-8 text-xs"
+                  title={
+                    pendingSuggestionCount > 0
+                      ? `Also applies ${pendingSuggestionCount} Jev suggestion${
+                          pendingSuggestionCount === 1 ? "" : "s"
+                        }`
+                      : undefined
+                  }
                   onClick={() => acceptAllPending()}
                 >
-                  Accept all pending ({pendingIds.length})
-                  {pendingSuggestionCount > 0 &&
-                    ` · applies ${pendingSuggestionCount} suggestion${
-                      pendingSuggestionCount === 1 ? "" : "s"
-                    }`}
+                  Accept pending ({pendingIds.length})
+                  {pendingSuggestionCount > 0 && (
+                    <Sparkles className="h-3 w-3 ml-1 text-cyan-600" aria-hidden />
+                  )}
                 </Button>
               )}
             </>
@@ -863,8 +952,9 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                             {matchedRule.action && (
                               <Badge
                                 variant="outline"
-                                className="text-[9px] px-1 py-0 border-green-400 text-green-600"
-                                title={`Rule: "${matchedRule.pattern}" → ${matchedRule.action}`}
+                                className="text-[9px] px-1 py-0 border-green-400 text-green-600 cursor-pointer"
+                                title={`Rule: "${matchedRule.pattern}" → ${matchedRule.action} — click to open`}
+                                onClick={() => onOpenRule(matchedRule.id)}
                               >
                                 S
                               </Badge>
@@ -872,12 +962,13 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                             {matchedRule.categoryName && (
                               <Badge
                                 variant="outline"
-                                className={`text-[9px] px-1 py-0 ${
+                                className={`text-[9px] px-1 py-0 cursor-pointer ${
                                   matchedRule.isPersonal
                                     ? "border-orange-400 text-orange-600"
                                     : "border-purple-400 text-purple-600"
                                 }`}
-                                title={`${matchedRule.isPersonal ? "Personal" : "Split"} rule: "${matchedRule.pattern}" → ${matchedRule.categoryName}`}
+                                title={`${matchedRule.isPersonal ? "Personal" : "Split"} rule: "${matchedRule.pattern}" → ${matchedRule.categoryName} — click to open`}
+                                onClick={() => onOpenRule(matchedRule.id)}
                               >
                                 {matchedRule.isPersonal ? "P" : "C"}
                               </Badge>
@@ -919,7 +1010,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                                 ? "Item diverges from matched rule — save as new rule"
                                 : "Save as rule"
                             }
-                            onClick={() => openRulePopover(item)}
+                            onClick={() => openRulePopover(item, matchedRule)}
                           >
                             {diverges ? "Update Rule" : "+ Rule"}
                           </Button>
@@ -927,6 +1018,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
                         {/* Inline rule editor */}
                         {isEditing && (
+                          <div className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-1">
                             <Input
                               value={rulePattern}
@@ -978,6 +1070,18 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                               x
                             </Button>
                           </div>
+                          {(() => {
+                            const preview = previewSaveRule(item);
+                            return (
+                              <div className="max-w-[260px] whitespace-normal text-[10px] leading-tight">
+                                <div className="text-muted-foreground">{preview.text}</div>
+                                {preview.warning && (
+                                  <div className="text-amber-600">⚠ {preview.warning}</div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          </div>
                         )}
 
                         {!isEditing && (
@@ -1001,6 +1105,38 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
           </TableBody>
         </Table>
       </div>
+
+      {ruleNotice && (
+        <div
+          role="status"
+          className="fixed bottom-4 right-4 z-50 flex max-w-md items-start gap-3 rounded-md border bg-popover px-3 py-2 text-xs shadow-lg"
+        >
+          <div className="space-y-0.5">
+            <div>{ruleNotice.text}</div>
+            {ruleNotice.warning && (
+              <div className="text-amber-600">⚠ {ruleNotice.warning}</div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="shrink-0 font-medium underline-offset-2 hover:underline"
+            onClick={() => {
+              onOpenRule(ruleNotice.ruleId);
+              setRuleNotice(null);
+            }}
+          >
+            View rule
+          </button>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setRuleNotice(null)}
+          >
+            x
+          </button>
+        </div>
+      )}
     </div>
   );
 }

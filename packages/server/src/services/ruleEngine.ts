@@ -1,62 +1,7 @@
 import { db } from "../db";
 import { rules, categories, lineItems } from "../db/schema";
 import { eq } from "drizzle-orm";
-import {
-  PERSONAL_SPLIT_RATIO,
-  descriptionMatchesPattern,
-  patternMatchLength,
-} from "@finance-tracker/shared";
-
-interface RuleMatch<T> {
-  rule: T;
-  patternLength: number;
-}
-
-/**
- * Find the best matching rule for a description using case- and
- * whitespace-insensitive substring matching. Longest pattern wins. Personal
- * rules win over split rules at equal pattern length. If multiple rules of the
- * same type match with the same length, first-created wins and `hasConflict`
- * is set.
- */
-function findBestMatch<
-  T extends { pattern: string; createdAt: string; ruleType?: string },
->(
-  description: string,
-  ruleList: T[]
-): { match: T | null; hasConflict: boolean } {
-  const matches: RuleMatch<T>[] = [];
-
-  for (const rule of ruleList) {
-    if (descriptionMatchesPattern(description, rule.pattern)) {
-      matches.push({ rule, patternLength: patternMatchLength(rule.pattern) });
-    }
-  }
-
-  if (matches.length === 0) return { match: null, hasConflict: false };
-
-  // Sort by pattern length descending, personal before split at equal length,
-  // then by createdAt ascending
-  matches.sort((a, b) => {
-    if (b.patternLength !== a.patternLength) {
-      return b.patternLength - a.patternLength;
-    }
-    const aPersonal = a.rule.ruleType === "personal" ? 0 : 1;
-    const bPersonal = b.rule.ruleType === "personal" ? 0 : 1;
-    if (aPersonal !== bPersonal) return aPersonal - bPersonal;
-    return a.rule.createdAt.localeCompare(b.rule.createdAt);
-  });
-
-  const longest = matches[0].patternLength;
-  const topMatches = matches.filter((m) => m.patternLength === longest);
-  const topType = topMatches[0].rule.ruleType;
-  const sameTypeTopMatches = topMatches.filter(
-    (m) => m.rule.ruleType === topType
-  );
-  const hasConflict = sameTypeTopMatches.length > 1;
-
-  return { match: matches[0].rule, hasConflict };
-}
+import { PERSONAL_SPLIT_RATIO, bestRuleFor } from "@finance-tracker/shared";
 
 /**
  * Apply all rules to a set of line item IDs.
@@ -81,14 +26,9 @@ export function applyRulesToLineItems(
   for (const item of items) {
     const updates: Record<string, unknown> = {};
 
-    // Filter applicable rules: split rules + personal rules for this user
-    const applicableRules = allRules.filter(
-      (r) =>
-        r.ruleType === "split" ||
-        (r.ruleType === "personal" && r.userId === item.userId)
-    );
-
-    const result = findBestMatch(item.description, applicableRules);
+    // Longest pattern wins; personal beats split at equal length; then
+    // first-created. A same-type tie is a conflict.
+    const result = bestRuleFor(item.description, allRules, item.userId);
     if (result.match) {
       applied++;
 
