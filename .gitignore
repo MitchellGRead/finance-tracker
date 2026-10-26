@@ -9,3 +9,4 @@ dist/
 *.tsbuildinfo
 test/test_data/
 backups/
+.playwright-mcp/

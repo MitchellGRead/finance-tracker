@@ -292,7 +292,7 @@ export function RulesPanel({ focusRuleId = null, onFocusRule }: RulesPanelProps)
   );
 
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       <div className="flex items-center gap-2">
         <Input
           value={searchFilter}
