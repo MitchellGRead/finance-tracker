@@ -337,8 +337,21 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const isModifiedFromDefault = (item: (typeof items)[number]) =>
     item.status !== "pending" || item.categoryId !== null;
 
-  const openRulePopover = (item: (typeof items)[number]) => {
+  const openRulePopover = (
+    item: (typeof items)[number],
+    matchedRule: MatchedRule | null
+  ) => {
     setRuleItemId(item.id);
+    if (matchedRule) {
+      // "Update Rule": edit the rule that actually covers this item. A fresh
+      // suggestPattern guess can be shorter than it (it strips trailing words,
+      // so "FIX HEALTHCARE PAY" becomes "FIX HEALTHCARE") — saving that updates
+      // or creates a broader rule the longer one still beats, so the item
+      // keeps diverging and the change never shows.
+      setRulePattern(matchedRule.pattern);
+      setRuleType(matchedRule.isPersonal ? "personal" : "split");
+      return;
+    }
     setRulePattern(suggestPattern(item.description));
     // Default to personal if item is already 100% split ratio
     setRuleType(item.splitRatio === 1.0 ? "personal" : "split");
@@ -919,7 +932,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                                 ? "Item diverges from matched rule — save as new rule"
                                 : "Save as rule"
                             }
-                            onClick={() => openRulePopover(item)}
+                            onClick={() => openRulePopover(item, matchedRule)}
                           >
                             {diverges ? "Update Rule" : "+ Rule"}
                           </Button>
