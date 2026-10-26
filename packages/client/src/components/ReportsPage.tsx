@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import {
@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "./ui/table";
 import { Badge } from "./ui/badge";
-import { MonthCalendar } from "./MonthCalendar";
+import { SpendingTrend } from "./SpendingTrend";
 import type { ReportSnapshot } from "@finance-tracker/shared";
 
 const formatCurrency = (amount: number) =>
@@ -32,25 +32,17 @@ const formatMonth = (month: number, year: number) =>
     year: "numeric",
   });
 
-export function ReportsPage() {
+interface ReportsPageProps {
+  month: number;
+  year: number;
+  onSelectMonth: (month: number, year: number) => void;
+}
+
+export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
   const trpc = useTRPC();
 
   const reportsListQuery = useQuery(trpc.reports.list.queryOptions());
   const reports = reportsListQuery.data ?? [];
-
-  const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
-  const [initialized, setInitialized] = useState(false);
-
-  // Once reports list loads, default to the most recent report's month
-  useEffect(() => {
-    if (!initialized && reports.length > 0) {
-      setMonth(reports[0].periodMonth);
-      setYear(reports[0].periodYear);
-      setInitialized(true);
-    }
-  }, [reports, initialized]);
 
   const reportQuery = useQuery(
     trpc.reports.get.queryOptions({ month, year })
@@ -119,194 +111,153 @@ export function ReportsPage() {
   const settlement = snapshot?.splitSummary.settlements[0];
 
   return (
-    <div className="flex gap-6">
-      {/* Left: Month Calendar */}
-      <div className="w-[260px] shrink-0">
-        <MonthCalendar
-          month={month}
-          year={year}
-          onSelect={(m, y) => {
-            setMonth(m);
-            setYear(y);
-          }}
-        />
-        {snapshot && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Generated{" "}
-            {new Date(snapshot.generatedAt).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            })}
-          </p>
-        )}
-      </div>
+    <div className="space-y-6">
+      {!snapshot && !reportQuery.isLoading && (
+        <div className="flex h-32 items-center justify-center text-muted-foreground">
+          No report generated for {formatMonth(month, year)}. Go to the
+          Workspace and click "Generate Report".
+        </div>
+      )}
 
-      {/* Right: Report content */}
-      <div className="flex-1 min-w-0 space-y-6">
-        {!snapshot && !reportQuery.isLoading && (
-          <div className="flex items-center justify-center h-64 text-muted-foreground">
-            No report generated for {formatMonth(month, year)}. Go to the
-            Workspace and click "Generate Report".
-          </div>
-        )}
+      {reportQuery.isLoading && (
+        <div className="text-sm text-muted-foreground">Loading report...</div>
+      )}
 
-        {reportQuery.isLoading && (
-          <div className="text-sm text-muted-foreground">Loading report...</div>
-        )}
-
-        {snapshot && (
-          <>
-            {/* Summary cards */}
-            <div className="grid grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Total Spending</CardDescription>
-                  <CardTitle className="text-2xl">
-                    {formatCurrency(totalSpending)}
-                  </CardTitle>
-                </CardHeader>
-                {hasPersonalData && (
-                  <CardContent>
-                    <div className="flex gap-3 text-xs text-muted-foreground">
-                      <span>Shared: {formatCurrency(totalShared)}</span>
-                      <span>Personal: {formatCurrency(totalPersonal)}</span>
-                    </div>
-                  </CardContent>
-                )}
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Settlement</CardDescription>
-                  <CardTitle className="text-2xl">
-                    {settlement
-                      ? formatCurrency(settlement.amount)
-                      : "$0.00"}
-                  </CardTitle>
-                </CardHeader>
+      {snapshot && (
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Total Spending</CardDescription>
+                <CardTitle className="text-2xl">
+                  {formatCurrency(totalSpending)}
+                </CardTitle>
+              </CardHeader>
+              {hasPersonalData && (
                 <CardContent>
-                  {settlement ? (
-                    <p className="text-sm text-muted-foreground">
-                      {settlement.fromUserName} owes {settlement.toUserName}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">All settled</p>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Line Items</CardDescription>
-                  <CardTitle className="text-2xl">
-                    {snapshot.lineItemCount}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-2 text-xs">
-                    <Badge variant="default">
-                      {snapshot.acceptedCount} accepted
-                    </Badge>
-                    <Badge variant="destructive">
-                      {snapshot.rejectedCount} rejected
-                    </Badge>
-                    <Badge variant="secondary">
-                      {snapshot.lineItemCount -
-                        snapshot.acceptedCount -
-                        snapshot.rejectedCount}{" "}
-                      pending
-                    </Badge>
+                  <div className="flex gap-3 text-xs text-muted-foreground">
+                    <span>Shared: {formatCurrency(totalShared)}</span>
+                    <span>Personal: {formatCurrency(totalPersonal)}</span>
                   </div>
                 </CardContent>
-              </Card>
-            </div>
+              )}
+            </Card>
 
-            {/* Category breakdown */}
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Category Breakdown</CardTitle>
+              <CardHeader className="pb-2">
+                <CardDescription>Settlement</CardDescription>
+                <CardTitle className="text-2xl">
+                  {settlement
+                    ? formatCurrency(settlement.amount)
+                    : "$0.00"}
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      {hasPersonalData && (
-                        <>
-                          <TableHead className="text-right">Shared</TableHead>
-                          {snapshot.userBreakdowns.map((u) => (
-                            <TableHead
-                              key={u.userId}
-                              className="text-right"
-                            >
-                              Personal ({u.userName})
-                            </TableHead>
-                          ))}
-                        </>
-                      )}
-                      <TableHead className="text-right w-[80px]">%</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {snapshot.categoryTotals.map((cat) => {
-                      const perUser = personalByCategoryByUser.get(
-                        categoryKey(cat.categoryId)
-                      );
-                      return (
-                        <TableRow key={cat.categoryId ?? "null"}>
-                          <TableCell className="text-sm font-medium">
-                            {cat.categoryName}
-                          </TableCell>
-                          <TableCell className="text-right text-sm tabular-nums">
-                            {formatCurrency(cat.total)}
-                          </TableCell>
-                          {hasPersonalData && (
-                            <>
-                              <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                                {formatCurrency(cat.sharedTotal ?? 0)}
-                              </TableCell>
-                              {snapshot.userBreakdowns.map((u) => {
-                                const amount = perUser?.get(u.userId) ?? 0;
-                                return (
-                                  <TableCell
-                                    key={u.userId}
-                                    className="text-right text-sm tabular-nums text-muted-foreground"
-                                  >
-                                    {amount > 0 ? formatCurrency(amount) : "—"}
-                                  </TableCell>
-                                );
-                              })}
-                            </>
-                          )}
-                          <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                            {totalSpending > 0
-                              ? Math.round((cat.total / totalSpending) * 100)
-                              : 0}
-                            %
-                          </TableCell>
-                        </TableRow>
-                      );
+                {settlement ? (
+                  <p className="text-sm text-muted-foreground">
+                    {settlement.fromUserName} owes {settlement.toUserName}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">All settled</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription className="flex justify-between gap-2">
+                  Line Items
+                  <span className="text-xs">
+                    Generated{" "}
+                    {new Date(snapshot.generatedAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
                     })}
-                    {snapshot.categoryTotals.length > 0 && (
-                      <TableRow className="font-semibold border-t-2">
-                        <TableCell>Total</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatCurrency(totalSpending)}
+                  </span>
+                </CardDescription>
+                <CardTitle className="text-2xl">
+                  {snapshot.lineItemCount}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2 text-xs">
+                  <Badge variant="default">
+                    {snapshot.acceptedCount} accepted
+                  </Badge>
+                  <Badge variant="destructive">
+                    {snapshot.rejectedCount} rejected
+                  </Badge>
+                  <Badge variant="secondary">
+                    {snapshot.lineItemCount -
+                      snapshot.acceptedCount -
+                      snapshot.rejectedCount}{" "}
+                    pending
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+
+      <SpendingTrend month={month} year={year} onSelectMonth={onSelectMonth} />
+
+      {snapshot && (
+        <>
+          {/* Category breakdown */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Category Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    {hasPersonalData && (
+                      <>
+                        <TableHead className="text-right">Shared</TableHead>
+                        {snapshot.userBreakdowns.map((u) => (
+                          <TableHead
+                            key={u.userId}
+                            className="text-right"
+                          >
+                            Personal ({u.userName})
+                          </TableHead>
+                        ))}
+                      </>
+                    )}
+                    <TableHead className="text-right w-[80px]">%</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {snapshot.categoryTotals.map((cat) => {
+                    const perUser = personalByCategoryByUser.get(
+                      categoryKey(cat.categoryId)
+                    );
+                    return (
+                      <TableRow key={cat.categoryId ?? "null"}>
+                        <TableCell className="text-sm font-medium">
+                          {cat.categoryName}
+                        </TableCell>
+                        <TableCell className="text-right text-sm tabular-nums">
+                          {formatCurrency(cat.total)}
                         </TableCell>
                         {hasPersonalData && (
                           <>
-                            <TableCell className="text-right tabular-nums text-muted-foreground">
-                              {formatCurrency(totalShared)}
+                            <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                              {formatCurrency(cat.sharedTotal ?? 0)}
                             </TableCell>
                             {snapshot.userBreakdowns.map((u) => {
-                              const amount = personalTotalByUser.get(u.userId) ?? 0;
+                              const amount = perUser?.get(u.userId) ?? 0;
                               return (
                                 <TableCell
                                   key={u.userId}
-                                  className="text-right tabular-nums text-muted-foreground"
+                                  className="text-right text-sm tabular-nums text-muted-foreground"
                                 >
                                   {amount > 0 ? formatCurrency(amount) : "—"}
                                 </TableCell>
@@ -314,127 +265,159 @@ export function ReportsPage() {
                             })}
                           </>
                         )}
-                        <TableCell className="text-right tabular-nums">
-                          100%
+                        <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                          {totalSpending > 0
+                            ? Math.round((cat.total / totalSpending) * 100)
+                            : 0}
+                          %
                         </TableCell>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-
-            {/* Per-user breakdown */}
-            <div className="grid grid-cols-2 gap-4">
-              {snapshot.userBreakdowns.map((user) => {
-                const userHasPersonal =
-                  user.personalSpending != null && user.personalSpending > 0;
-                return (
-                  <Card key={user.userId}>
-                    <CardHeader>
-                      <CardTitle className="text-base">
-                        {user.userName}
-                      </CardTitle>
-                      <CardDescription>
-                        Total: {formatCurrency(user.totalSpent)}
-                        {userHasPersonal && user.effectiveTotal != null && (
-                          <span className="ml-2">
-                            Effective: {formatCurrency(user.effectiveTotal)}
-                          </span>
-                        )}
-                      </CardDescription>
-                      {userHasPersonal && (
-                        <div className="flex gap-3 text-xs text-muted-foreground mt-1">
-                          <span>
-                            Shared: {formatCurrency(user.sharedSpending ?? 0)}
-                          </span>
-                          <span>
-                            Personal:{" "}
-                            {formatCurrency(user.personalSpending ?? 0)}
-                          </span>
-                        </div>
-                      )}
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Category</TableHead>
-                            <TableHead className="text-right">Total</TableHead>
-                            <TableHead className="text-right">Shared</TableHead>
-                            {userHasPersonal && (
-                              <TableHead className="text-right">
-                                Personal
-                              </TableHead>
-                            )}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {user.byCategory.map((cat) => {
-                            const shared = cat.sharedTotal ?? 0;
-                            const personal = cat.personalTotal ?? 0;
+                    );
+                  })}
+                  {snapshot.categoryTotals.length > 0 && (
+                    <TableRow className="font-semibold border-t-2">
+                      <TableCell>Total</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrency(totalSpending)}
+                      </TableCell>
+                      {hasPersonalData && (
+                        <>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {formatCurrency(totalShared)}
+                          </TableCell>
+                          {snapshot.userBreakdowns.map((u) => {
+                            const amount = personalTotalByUser.get(u.userId) ?? 0;
                             return (
-                              <TableRow key={cat.categoryId ?? "null"}>
-                                <TableCell className="text-sm">
-                                  {cat.categoryName}
-                                </TableCell>
-                                <TableCell className="text-right text-sm tabular-nums">
-                                  {formatCurrency(cat.total)}
-                                </TableCell>
-                                <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                                  {shared > 0 ? formatCurrency(shared) : "—"}
-                                </TableCell>
-                                {userHasPersonal && (
-                                  <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                                    {personal > 0
-                                      ? formatCurrency(personal)
-                                      : "—"}
-                                  </TableCell>
-                                )}
-                              </TableRow>
+                              <TableCell
+                                key={u.userId}
+                                className="text-right tabular-nums text-muted-foreground"
+                              >
+                                {amount > 0 ? formatCurrency(amount) : "—"}
+                              </TableCell>
                             );
                           })}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                        </>
+                      )}
+                      <TableCell className="text-right tabular-nums">
+                        100%
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
 
-            {/* Settlement summary */}
-            {snapshot.splitSummary.settlements.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    Settlement Summary
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {snapshot.splitSummary.settlements.map((s, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">{s.fromUserName}</span>
-                      <span className="text-muted-foreground">owes</span>
-                      <span className="font-medium">{s.toUserName}</span>
-                      <span className="font-semibold text-lg ml-2">
-                        {formatCurrency(s.amount)}
-                      </span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
+          {/* Per-user breakdown */}
+          <div className="grid grid-cols-2 gap-4">
+            {snapshot.userBreakdowns.map((user) => {
+              const userHasPersonal =
+                user.personalSpending != null && user.personalSpending > 0;
+              return (
+                <Card key={user.userId}>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      {user.userName}
+                    </CardTitle>
+                    <CardDescription>
+                      Total: {formatCurrency(user.totalSpent)}
+                      {userHasPersonal && user.effectiveTotal != null && (
+                        <span className="ml-2">
+                          Effective: {formatCurrency(user.effectiveTotal)}
+                        </span>
+                      )}
+                    </CardDescription>
+                    {userHasPersonal && (
+                      <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                        <span>
+                          Shared: {formatCurrency(user.sharedSpending ?? 0)}
+                        </span>
+                        <span>
+                          Personal:{" "}
+                          {formatCurrency(user.personalSpending ?? 0)}
+                        </span>
+                      </div>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Category</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead className="text-right">Shared</TableHead>
+                          {userHasPersonal && (
+                            <TableHead className="text-right">
+                              Personal
+                            </TableHead>
+                          )}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {user.byCategory.map((cat) => {
+                          const shared = cat.sharedTotal ?? 0;
+                          const personal = cat.personalTotal ?? 0;
+                          return (
+                            <TableRow key={cat.categoryId ?? "null"}>
+                              <TableCell className="text-sm">
+                                {cat.categoryName}
+                              </TableCell>
+                              <TableCell className="text-right text-sm tabular-nums">
+                                {formatCurrency(cat.total)}
+                              </TableCell>
+                              <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                                {shared > 0 ? formatCurrency(shared) : "—"}
+                              </TableCell>
+                              {userHasPersonal && (
+                                <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                                  {personal > 0
+                                    ? formatCurrency(personal)
+                                    : "—"}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
 
-            {/* Trend comparison */}
-            {priorSnapshots.length > 0 && (
-              <TrendSection
-                currentSnapshot={snapshot}
-                priorSnapshots={priorSnapshots}
-              />
-            )}
-          </>
-        )}
-      </div>
+          {/* Settlement summary */}
+          {snapshot.splitSummary.settlements.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Settlement Summary
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {snapshot.splitSummary.settlements.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span className="font-medium">{s.fromUserName}</span>
+                    <span className="text-muted-foreground">owes</span>
+                    <span className="font-medium">{s.toUserName}</span>
+                    <span className="font-semibold text-lg ml-2">
+                      {formatCurrency(s.amount)}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Trend comparison */}
+          {priorSnapshots.length > 0 && (
+            <TrendSection
+              currentSnapshot={snapshot}
+              priorSnapshots={priorSnapshots}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }

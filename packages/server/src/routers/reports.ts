@@ -4,6 +4,7 @@ import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
 import { reportSnapshots } from "../db/schema";
 import { generateReportData } from "../services/reportGenerator";
+import { buildReportTrend } from "../services/reportTrend";
 
 export const reportsRouter = router({
   generate: publicProcedure
@@ -77,6 +78,15 @@ export const reportsRouter = router({
       })
       .from(reportSnapshots)
       .orderBy(desc(reportSnapshots.periodYear), desc(reportSnapshots.periodMonth));
+  }),
+
+  /** Month-over-month series for the trend chart, from every snapshot. */
+  trend: publicProcedure.query(async () => {
+    const snapshots = db
+      .select({ data: reportSnapshots.data })
+      .from(reportSnapshots)
+      .all();
+    return buildReportTrend(snapshots.map((s) => JSON.parse(s.data)));
   }),
 
   delete: publicProcedure
