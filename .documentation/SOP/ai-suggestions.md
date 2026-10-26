@@ -120,9 +120,8 @@ It fills only empty slots, flips `suggestion_status` to `confirmed`, and is
 idempotent.
 
 **Override flags are deliberately left `false.`** They mean "a human decided
-this". Setting them would (a) sweep AI rows into `clearOverrides`, which selects
-*by* those flags, (b) make `reapplyRulesForPeriod` skip the row, so a real
-learned rule would be blocked by an AI guess, and (c) make the client's `*`
+this". Setting them would (a) make `reapplyRulesForPeriod` skip the row, so a
+real learned rule would be blocked by an AI guess, and (b) make the client's `*`
 marker lie. Provenance is carried by `suggestion_status` + `suggestion_model` +
 `suggested_at` instead — strictly more informative than a boolean.
 
@@ -144,7 +143,7 @@ operator's choice beats the model's.
 | Trigger | Behavior |
 |---|---|
 | Manual category/split edit | nothing cleared — ghost hidden by the predicate |
-| `clearItemOverrides` / `clearOverrides` | all 7 columns nulled |
+| `clearItemOverrides` | all 7 columns nulled |
 | `suggestions.clear({ ids })` | all 7 columns nulled |
 | `suggestions.generate({ force: true })` | overwritten in place |
 | `categories.delete` | `suggested_category_id` nulled first (FK) |
