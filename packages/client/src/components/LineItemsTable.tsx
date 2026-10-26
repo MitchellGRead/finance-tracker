@@ -53,6 +53,19 @@ interface LineItemsTableProps {
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
 type SuggestionFilter = "all" | "has" | "none";
 
+// Passed as `items` so each trigger shows the label, not the raw value.
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
+  all: "All Status",
+  pending: "Pending",
+  accepted: "Accepted",
+  rejected: "Rejected",
+};
+const SUGGESTION_FILTER_LABELS: Record<SuggestionFilter, string> = {
+  all: "All Suggestions",
+  has: "Has suggestion",
+  none: "No suggestion",
+};
+
 export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -186,6 +199,28 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
     usersQuery.data?.find((u) => u.id === userId)?.name ?? "Unknown";
 
   const categoryList = categoriesQuery.data ?? [];
+
+  const userFilterLabels: Record<string, string> = {
+    all: "All Users",
+    ...Object.fromEntries((usersQuery.data ?? []).map((u) => [u.name, u.name])),
+  };
+  const categoryFilterLabels: Record<string, string> = {
+    all: "All Categories",
+    uncategorized: "Uncategorized",
+    ...Object.fromEntries(categoryList.map((c) => [String(c.id), c.name])),
+  };
+
+  const filtersActive =
+    statusFilter !== "all" ||
+    userFilter !== "all" ||
+    categoryFilter !== "all" ||
+    suggestionFilter !== "all";
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setUserFilter("all");
+    setCategoryFilter("all");
+    setSuggestionFilter("all");
+  };
 
   const ruleFor = (item: { description: string; userId: number }): MatchedRule | null =>
     findMatchingRule(item.description, allRules, item.userId);
@@ -413,6 +448,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
       <div className="flex items-center gap-3 flex-wrap">
         <Select
           value={statusFilter}
+          items={STATUS_FILTER_LABELS}
           onValueChange={(v) => {
             if (v) setStatusFilter(v as StatusFilter);
           }}
@@ -430,6 +466,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
 
         <Select
           value={userFilter}
+          items={userFilterLabels}
           onValueChange={(v) => {
             if (v) setUserFilter(v);
           }}
@@ -449,6 +486,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
 
         <Select
           value={categoryFilter}
+          items={categoryFilterLabels}
           onValueChange={(v) => {
             if (v) setCategoryFilter(v);
           }}
@@ -470,6 +508,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
         {suggestionsEnabled && (
           <Select
             value={suggestionFilter}
+            items={SUGGESTION_FILTER_LABELS}
             onValueChange={(v) => {
               if (v) setSuggestionFilter(v as SuggestionFilter);
             }}
@@ -483,6 +522,17 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
               <SelectItem value="none">No suggestion</SelectItem>
             </SelectContent>
           </Select>
+        )}
+
+        {filtersActive && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-sm text-muted-foreground"
+            onClick={clearFilters}
+          >
+            Clear all
+          </Button>
         )}
 
         <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
