@@ -252,8 +252,8 @@ export function startSuggestionRun(lineItemIds: number[], force = false): Sugges
  * Materializes untouched shadow suggestions into the real columns.
  *
  * Called from every accept path. Override flags are deliberately left alone:
- * they mean "a human decided this", and setting them would sweep AI rows into
- * `clearOverrides` and block rule re-application. Provenance is carried by
+ * they mean "a human decided this", and setting them would block rule
+ * re-application and mark AI guesses as manual edits. Provenance is carried by
  * `suggestionStatus` instead.
  *
  * Idempotent — after the status flips to `confirmed` the shadow predicates are

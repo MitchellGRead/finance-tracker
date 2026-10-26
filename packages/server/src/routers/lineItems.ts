@@ -150,52 +150,6 @@ export const lineItemsRouter = router({
       return { updated: input.ids.length };
     }),
 
-  clearOverrides: publicProcedure
-    .input(
-      z.object({
-        month: z.number().min(1).max(12),
-        year: z.number(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const prefix = `${input.year}-${String(input.month).padStart(2, "0")}`;
-      const allItems = db.select().from(lineItems).all();
-      const overriddenItems = allItems.filter(
-        (item) =>
-          item.date.startsWith(prefix) &&
-          (item.statusOverride || item.categoryOverride || item.splitRatioOverride)
-      );
-
-      // Reset all overrides to defaults
-      for (const item of overriddenItems) {
-        db.update(lineItems)
-          .set({
-            status: "pending",
-            statusOverride: false,
-            categoryId: null,
-            categoryOverride: false,
-            splitRatio: GLOBAL_DEFAULT_SPLIT_RATIO,
-            splitRatioOverride: false,
-          })
-          .where(eq(lineItems.id, item.id))
-          .run();
-      }
-
-      // "Reset to machine defaults" resets the AI's guess too — the operator
-      // can regenerate from the toolbar.
-      const ids = overriddenItems.map((item) => item.id);
-      const suggestionsCleared = clearSuggestions(ids);
-
-      // Re-apply rules to these items
-      let rulesApplied = 0;
-      if (ids.length > 0) {
-        const result = applyRulesToLineItems(ids);
-        rulesApplied = result.applied;
-      }
-
-      return { cleared: overriddenItems.length, rulesApplied, suggestionsCleared };
-    }),
-
   clearItemOverrides: publicProcedure
     .input(z.object({ ids: z.array(z.number()) }))
     .mutation(async ({ input }) => {
