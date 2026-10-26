@@ -51,6 +51,13 @@ export function App() {
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [focusRuleId, setFocusRuleId] = useState<number | null>(null);
+
+  const openRule = (ruleId: number) => {
+    setFocusRuleId(ruleId);
+    setRulesOpen(true);
+  };
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -203,7 +210,13 @@ export function App() {
                     </Tabs>
                   </DialogContent>
                 </Dialog>
-                <Dialog>
+                <Dialog
+                  open={rulesOpen}
+                  onOpenChange={(open) => {
+                    setRulesOpen(open);
+                    if (!open) setFocusRuleId(null);
+                  }}
+                >
                   <DialogTrigger
                     className={cn(
                       buttonVariants({ variant: "outline", size: "sm" }),
@@ -219,7 +232,7 @@ export function App() {
                     <DialogHeader>
                       <DialogTitle>Rules</DialogTitle>
                     </DialogHeader>
-                    <RulesPanel />
+                    <RulesPanel focusRuleId={focusRuleId} onFocusRule={setFocusRuleId} />
                   </DialogContent>
                 </Dialog>
                 <Button
@@ -285,7 +298,7 @@ export function App() {
       {page === "workspace" ? (
         <div className="flex-1 min-h-0 px-6 py-4">
           <main className="flex h-full min-w-0 flex-col">
-            <LineItemsTable month={month} year={year} />
+            <LineItemsTable month={month} year={year} onOpenRule={openRule} />
           </main>
         </div>
       ) : (

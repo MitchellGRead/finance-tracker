@@ -3,53 +3,34 @@
  * Moved out of LineItemsTable so they can be tested and shared; none need React.
  */
 
-import {
-  descriptionMatchesPattern,
-  patternMatchLength,
-} from "@finance-tracker/shared";
+import { bestRuleFor } from "@finance-tracker/shared";
 
 export interface MatchedRule {
+  id: number;
   pattern: string;
   action: string | null;
   categoryName: string | null;
   isPersonal: boolean;
 }
 
+/** The rule the engine would apply to this item (same precedence, via shared). */
 export function findMatchingRule(
   description: string,
   allRules: Array<{
+    id: number;
     pattern: string;
     ruleType: string;
     userId: number | null;
     action: string | null;
     categoryName: string | null;
+    createdAt: string;
   }>,
   itemUserId: number
 ): MatchedRule | null {
-  // Filter applicable rules: split rules + personal rules for this user
-  const applicable = allRules.filter(
-    (r) =>
-      r.ruleType === "split" ||
-      (r.ruleType === "personal" && r.userId === itemUserId)
-  );
-
-  // Find best match (longest pattern, personal wins at equal length)
-  let best: (typeof applicable)[number] | null = null;
-  let bestLen = 0;
-  let bestIsPersonal = false;
-  for (const rule of applicable) {
-    if (!descriptionMatchesPattern(description, rule.pattern)) continue;
-    const isPersonal = rule.ruleType === "personal";
-    const len = patternMatchLength(rule.pattern);
-    if (len > bestLen || (len === bestLen && isPersonal && !bestIsPersonal)) {
-      best = rule;
-      bestLen = len;
-      bestIsPersonal = isPersonal;
-    }
-  }
-
+  const best = bestRuleFor(description, allRules, itemUserId).match;
   if (!best) return null;
   return {
+    id: best.id,
     pattern: best.pattern,
     action: best.action,
     categoryName: best.categoryName,

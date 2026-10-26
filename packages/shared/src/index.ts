@@ -27,3 +27,17 @@ export {
 } from "./matching";
 export type { FingerprintInput } from "./fingerprint";
 export { computeFingerprint } from "./fingerprint";
+export type {
+  RankableRule,
+  SavableRule,
+  RuleSaveInput,
+  RuleSavePlan,
+} from "./rulePrecedence";
+export {
+  ruleAppliesToUser,
+  compareRulePrecedence,
+  rankMatchingRules,
+  bestRuleFor,
+  findEquivalentRule,
+  planRuleSave,
+} from "./rulePrecedence";

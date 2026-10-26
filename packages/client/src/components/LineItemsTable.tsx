@@ -1,7 +1,13 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { suggestPattern } from "../lib/patterns";
+import { planRuleSave } from "@finance-tracker/shared";
+import {
+  describeSavePlan,
+  describeSaveResult,
+  type RuleNotice,
+} from "../lib/ruleSave";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -40,12 +46,14 @@ import {
 interface LineItemsTableProps {
   month: number;
   year: number;
+  /** Open the Rules dialog focused on this rule. */
+  onOpenRule: (ruleId: number) => void;
 }
 
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
 type SuggestionFilter = "all" | "has" | "none";
 
-export function LineItemsTable({ month, year }: LineItemsTableProps) {
+export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -65,6 +73,14 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   const [ruleItemId, setRuleItemId] = useState<number | null>(null);
   const [rulePattern, setRulePattern] = useState("");
   const [ruleType, setRuleType] = useState<"split" | "personal">("split");
+  // What the last rule save did, so it is never a silent change to some
+  // other rule.
+  const [ruleNotice, setRuleNotice] = useState<RuleNotice | null>(null);
+  useEffect(() => {
+    if (!ruleNotice) return;
+    const timer = setTimeout(() => setRuleNotice(null), 10_000);
+    return () => clearTimeout(timer);
+  }, [ruleNotice]);
 
   const usersQuery = useQuery(trpc.users.list.queryOptions());
   const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
@@ -120,12 +136,11 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
   );
   const saveAsRuleMutation = useMutation(
     trpc.lineItems.acceptAndCreateRules.mutationOptions({
-      onSuccess: () => {
+      onSuccess: (result) => {
         invalidateAll();
-        queryClient.invalidateQueries({
-          queryKey: trpc.rules.list.queryKey(),
-        });
+        queryClient.invalidateQueries({ queryKey: trpc.rules.pathKey() });
         setRuleItemId(null);
+        setRuleNotice(describeSaveResult(result));
       },
     })
   );
@@ -356,6 +371,27 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
     // Default to personal if item is already 100% split ratio
     setRuleType(item.splitRatio === 1.0 ? "personal" : "split");
   };
+
+  const categoryNameOf = (id: number | null) =>
+    id === null ? null : categoryList.find((c) => c.id === id)?.name ?? null;
+
+  const previewSaveRule = (item: (typeof items)[number]) =>
+    describeSavePlan(
+      planRuleSave(
+        allRules,
+        {
+          pattern: rulePattern,
+          ruleType,
+          userId: item.userId,
+          action: item.status === "rejected" ? "reject" : "accept",
+          categoryId: item.categoryId,
+        },
+        item
+      ),
+      rulePattern,
+      ruleType,
+      categoryNameOf
+    );
 
   const confirmSaveRule = (item: (typeof items)[number]) => {
     saveAsRuleMutation.mutate({
@@ -876,8 +912,9 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                             {matchedRule.action && (
                               <Badge
                                 variant="outline"
-                                className="text-[9px] px-1 py-0 border-green-400 text-green-600"
-                                title={`Rule: "${matchedRule.pattern}" → ${matchedRule.action}`}
+                                className="text-[9px] px-1 py-0 border-green-400 text-green-600 cursor-pointer"
+                                title={`Rule: "${matchedRule.pattern}" → ${matchedRule.action} — click to open`}
+                                onClick={() => onOpenRule(matchedRule.id)}
                               >
                                 S
                               </Badge>
@@ -885,12 +922,13 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                             {matchedRule.categoryName && (
                               <Badge
                                 variant="outline"
-                                className={`text-[9px] px-1 py-0 ${
+                                className={`text-[9px] px-1 py-0 cursor-pointer ${
                                   matchedRule.isPersonal
                                     ? "border-orange-400 text-orange-600"
                                     : "border-purple-400 text-purple-600"
                                 }`}
-                                title={`${matchedRule.isPersonal ? "Personal" : "Split"} rule: "${matchedRule.pattern}" → ${matchedRule.categoryName}`}
+                                title={`${matchedRule.isPersonal ? "Personal" : "Split"} rule: "${matchedRule.pattern}" → ${matchedRule.categoryName} — click to open`}
+                                onClick={() => onOpenRule(matchedRule.id)}
                               >
                                 {matchedRule.isPersonal ? "P" : "C"}
                               </Badge>
@@ -940,6 +978,7 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
 
                         {/* Inline rule editor */}
                         {isEditing && (
+                          <div className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-1">
                             <Input
                               value={rulePattern}
@@ -991,6 +1030,18 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
                               x
                             </Button>
                           </div>
+                          {(() => {
+                            const preview = previewSaveRule(item);
+                            return (
+                              <div className="max-w-[260px] whitespace-normal text-[10px] leading-tight">
+                                <div className="text-muted-foreground">{preview.text}</div>
+                                {preview.warning && (
+                                  <div className="text-amber-600">⚠ {preview.warning}</div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          </div>
                         )}
 
                         {!isEditing && (
@@ -1014,6 +1065,38 @@ export function LineItemsTable({ month, year }: LineItemsTableProps) {
           </TableBody>
         </Table>
       </div>
+
+      {ruleNotice && (
+        <div
+          role="status"
+          className="fixed bottom-4 right-4 z-50 flex max-w-md items-start gap-3 rounded-md border bg-popover px-3 py-2 text-xs shadow-lg"
+        >
+          <div className="space-y-0.5">
+            <div>{ruleNotice.text}</div>
+            {ruleNotice.warning && (
+              <div className="text-amber-600">⚠ {ruleNotice.warning}</div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="shrink-0 font-medium underline-offset-2 hover:underline"
+            onClick={() => {
+              onOpenRule(ruleNotice.ruleId);
+              setRuleNotice(null);
+            }}
+          >
+            View rule
+          </button>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setRuleNotice(null)}
+          >
+            x
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "./ui/button";
@@ -24,7 +24,13 @@ interface EditState {
   userName: string;
 }
 
-export function RulesPanel() {
+interface RulesPanelProps {
+  /** Rule to scroll to and highlight (from a line item badge or save notice). */
+  focusRuleId?: number | null;
+  onFocusRule?: (ruleId: number) => void;
+}
+
+export function RulesPanel({ focusRuleId = null, onFocusRule }: RulesPanelProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [pattern, setPattern] = useState("");
@@ -36,6 +42,8 @@ export function RulesPanel() {
   const [editing, setEditing] = useState<EditState | null>(null);
 
   const rulesQuery = useQuery(trpc.rules.list.queryOptions());
+  const coverageQuery = useQuery(trpc.rules.coverage.queryOptions());
+  const coverageById = new Map((coverageQuery.data ?? []).map((c) => [c.ruleId, c]));
   const categoriesQuery = useQuery(trpc.categories.list.queryOptions());
   const usersQuery = useQuery(trpc.users.list.queryOptions());
 
@@ -48,8 +56,9 @@ export function RulesPanel() {
   const getUserName = (id: number) =>
     usersQuery.data?.find((u) => u.id === id)?.name ?? "Unknown";
 
+  // pathKey covers list and coverage: any rule change moves both.
   const invalidateRules = () =>
-    queryClient.invalidateQueries({ queryKey: trpc.rules.list.queryKey() });
+    queryClient.invalidateQueries({ queryKey: trpc.rules.pathKey() });
 
   const createMutation = useMutation(
     trpc.rules.create.mutationOptions({
@@ -139,6 +148,21 @@ export function RulesPanel() {
       categoryId: catId,
     });
   };
+
+  const ruleById = new Map((rulesQuery.data ?? []).map((r) => [r.id, r]));
+
+  // Jump to the focused rule: show its tab, clear a search that could hide it.
+  const focusedRule = focusRuleId === null ? undefined : ruleById.get(focusRuleId);
+  useEffect(() => {
+    if (!focusedRule) return;
+    setRuleType(focusedRule.ruleType as RuleType);
+    setSearchFilter("");
+  }, [focusedRule?.id]);
+  const rowRefs = useRef(new Map<number, HTMLDivElement>());
+  useEffect(() => {
+    if (focusRuleId === null) return;
+    rowRefs.current.get(focusRuleId)?.scrollIntoView({ block: "center" });
+  }, [focusRuleId, ruleType, rulesQuery.data]);
 
   const filteredRules = rulesQuery.data?.filter((r) => {
     if (r.ruleType !== ruleType) return false;
@@ -319,7 +343,13 @@ export function RulesPanel() {
             ) : (
               <div
                 key={rule.id}
-                className="flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/50 group cursor-pointer hover:bg-muted"
+                ref={(el) => {
+                  if (el) rowRefs.current.set(rule.id, el);
+                  else rowRefs.current.delete(rule.id);
+                }}
+                className={`flex items-center justify-between text-xs py-1 px-2 rounded bg-muted/50 group cursor-pointer hover:bg-muted ${
+                  rule.id === focusRuleId ? "ring-2 ring-inset ring-primary" : ""
+                }`}
                 onClick={() => startEditing(rule)}
               >
                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -355,6 +385,11 @@ export function RulesPanel() {
                     </Badge>
                   )}
                 </div>
+                <RuleCoverageNote
+                  coverage={coverageById.get(rule.id)}
+                  patternOf={(id) => ruleById.get(id)?.pattern ?? `#${id}`}
+                  onFocusRule={onFocusRule}
+                />
                 <Button
                   variant="ghost"
                   size="sm"
@@ -386,5 +421,50 @@ export function RulesPanel() {
         createMutation.isPending
       )}
     </div>
+  );
+}
+
+/**
+ * How many stored items the rule decides, and — when a more specific rule
+ * wins where both match — which one, so editing a rule that never applies
+ * is visibly pointless.
+ */
+function RuleCoverageNote({
+  coverage,
+  patternOf,
+  onFocusRule,
+}: {
+  coverage: { matches: number; wins: number; beatenBy: Array<{ ruleId: number; count: number }> } | undefined;
+  patternOf: (ruleId: number) => string;
+  onFocusRule?: (ruleId: number) => void;
+}) {
+  if (!coverage) return null;
+  const top = coverage.beatenBy[0];
+  return (
+    <span className="ml-2 flex shrink-0 items-center gap-1.5 text-[10px] tabular-nums">
+      <span
+        className={coverage.wins === 0 ? "text-amber-600" : "text-muted-foreground"}
+        title={`Decides ${coverage.wins} of the ${coverage.matches} stored items it matches`}
+      >
+        {coverage.wins === 0 && coverage.matches > 0
+          ? "never applies"
+          : `${coverage.wins} item${coverage.wins === 1 ? "" : "s"}`}
+      </span>
+      {top && (
+        <button
+          type="button"
+          className="max-w-[220px] truncate text-amber-600 underline-offset-2 hover:underline"
+          title={`Outranked on ${top.count} item${top.count === 1 ? "" : "s"} by the more specific "${patternOf(top.ruleId)}"${
+            coverage.beatenBy.length > 1 ? ` (+${coverage.beatenBy.length - 1} more)` : ""
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onFocusRule?.(top.ruleId);
+          }}
+        >
+          beaten by {patternOf(top.ruleId).replace(/\s+/g, " ")} ×{top.count}
+        </button>
+      )}
+    </span>
   );
 }

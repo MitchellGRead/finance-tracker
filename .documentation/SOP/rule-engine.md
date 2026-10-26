@@ -55,10 +55,17 @@ Normalization happens **at compare time, not at write time**. Descriptions stay
 verbatim as the bank sent them, and every already-stored pattern is repaired
 without a data migration.
 
-`normalizeForMatch` is shared because three places compare patterns and must
-never disagree: `ruleEngine.ts` (applies them), `lib/lineItemRules.ts` (shows
-which rule matched), and `RulesPanel.tsx` (search). `lineItems.acceptAndCreateRules`
-uses `patternsAreEquivalent` for its dedupe check for the same reason.
+`normalizeForMatch` is shared because several places compare patterns and
+must never disagree: `ruleEngine.ts` (applies them), `lib/lineItemRules.ts`
+(shows which rule matched), `RulesPanel.tsx` (search), and rule saving and
+coverage (below).
+
+### Precedence is shared too
+
+Which rule wins lives in `packages/shared/src/rulePrecedence.ts`
+(`bestRuleFor`, `compareRulePrecedence`). The engine, the table's rule badges,
+the row editor's save preview and the Rules dialog's coverage counts all call
+it, so the rule a badge names is the rule the engine applies.
 
 An empty or all-whitespace pattern matches **nothing** — otherwise it would
 match every description and hijack an entire import.
@@ -99,6 +106,31 @@ Rules are created implicitly through user actions:
 - When a user categorizes a line item that had no category, the system can prompt to create a category rule
 - When a user accepts/rejects a line item, the system can prompt to create an accept/reject rule
 - Rules can also be managed directly through a rule management panel
+
+### Saving a rule from a line item
+
+`+ Rule` / `Update Rule` saves to the rule with **exactly that pattern and
+scope** (`findEquivalentRule`), creating one if none exists. That is not
+necessarily the rule the item matched: a shorter pattern updates a broader
+rule that the longer, matched one still outranks, and the item never changes.
+
+So the flow says what it will do and what it did — `planRuleSave` produces
+both, and `acceptAndCreateRules` executes the same plan:
+- `Update Rule` prefills the matched rule's own pattern and type; `+ Rule`
+  (no covering rule) prefills `suggestPattern`
+- Under the editor: "Updates “X”: reject → accept" or "Creates personal rule
+  “X”", with a warning when the pattern doesn't match the item or a more
+  specific rule will still decide it
+- After saving, a notice names the rule, what changed, how many stored items
+  it now decides, and the same warning; "View rule" opens it
+
+### Seeing which rule applies
+
+- A row's S/P/C badge opens the Rules dialog scrolled to that rule
+- Each rule in the dialog shows how many stored items it decides
+  (`rules.coverage`, all months and statuses). A rule that matches items but
+  decides none says "never applies"; "beaten by X ×N" names the more specific
+  rule that wins instead and jumps to it
 
 ## Relationship to AI Suggestions
 

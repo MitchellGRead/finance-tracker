@@ -8,9 +8,10 @@ import {
   GLOBAL_DEFAULT_SPLIT_RATIO,
   LineItemStatus,
   PERSONAL_SPLIT_RATIO,
-  patternsAreEquivalent,
+  planRuleSave,
 } from "@finance-tracker/shared";
 import { applyRulesToLineItems } from "../services/ruleEngine";
+import { computeRuleCoverage } from "../services/ruleCoverage";
 import {
   clearSuggestions,
   confirmSuggestions,
@@ -337,30 +338,34 @@ export const lineItemsRouter = router({
         .get();
       const ruleCategoryId = input.categoryId ?? item?.categoryId ?? null;
 
-      // Find existing rule with same pattern + scope
-      const existing = db
-        .select()
-        .from(rules)
-        .all()
-        .find(
-          (r) =>
-            patternsAreEquivalent(r.pattern, input.pattern) &&
-            r.ruleType === input.ruleType &&
-            (input.ruleType === "split" || r.userId === input.userId)
-        );
+      // Same plan the row editor previewed: update the rule with this exact
+      // pattern and scope, or create one.
+      const allRules = db.select().from(rules).all();
+      const plan = planRuleSave(
+        allRules,
+        {
+          pattern: input.pattern,
+          ruleType: input.ruleType,
+          userId: input.userId,
+          action,
+          categoryId: ruleCategoryId,
+        },
+        { description: item?.description ?? "", userId: item?.userId ?? input.userId }
+      );
 
-      if (existing) {
-        // Update existing rule with new action/category
+      let ruleId: number;
+      if (plan.existing) {
+        ruleId = plan.existing.id;
         db.update(rules)
           .set({
             action,
             ...(ruleCategoryId !== null && { categoryId: ruleCategoryId }),
           })
-          .where(eq(rules.id, existing.id))
+          .where(eq(rules.id, ruleId))
           .run();
       } else {
-        // Create new unified rule
-        db.insert(rules)
+        ruleId = db
+          .insert(rules)
           .values({
             pattern: input.pattern,
             ruleType: input.ruleType,
@@ -369,10 +374,45 @@ export const lineItemsRouter = router({
             categoryId: ruleCategoryId,
             createdByUserId: input.userId,
           })
-          .run();
+          .returning({ id: rules.id })
+          .get().id;
       }
 
-      return { success: true };
+      const savedRule = db.select().from(rules).where(eq(rules.id, ruleId)).get()!;
+      const coverage = computeRuleCoverage(
+        db.select().from(rules).all(),
+        db
+          .select({ description: lineItems.description, userId: lineItems.userId })
+          .from(lineItems)
+          .all()
+      ).find((c) => c.ruleId === ruleId);
+      const categoryName = (id: number | null) =>
+        id === null
+          ? null
+          : (db.select({ name: categories.name }).from(categories).where(eq(categories.id, id)).get()
+              ?.name ?? null);
+
+      return {
+        outcome: plan.existing ? ("updated" as const) : ("created" as const),
+        rule: {
+          id: savedRule.id,
+          pattern: savedRule.pattern,
+          ruleType: savedRule.ruleType,
+          action: savedRule.action,
+          categoryName: categoryName(savedRule.categoryId),
+        },
+        changes: {
+          action: plan.changes.action ?? null,
+          category: plan.changes.categoryId
+            ? {
+                from: categoryName(plan.changes.categoryId.from),
+                to: categoryName(plan.changes.categoryId.to),
+              }
+            : null,
+        },
+        wins: coverage?.wins ?? 0,
+        beatenBy: plan.beatenBy ? { id: plan.beatenBy.id, pattern: plan.beatenBy.pattern } : null,
+      };
     }),
 
   create: publicProcedure
