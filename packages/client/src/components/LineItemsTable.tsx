@@ -129,9 +129,6 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
       onSuccess: invalidateAll,
     })
   );
-  const clearOverridesMutation = useMutation(
-    trpc.lineItems.clearOverrides.mutationOptions({ onSuccess: invalidateAll })
-  );
   const clearItemOverridesMutation = useMutation(
     trpc.lineItems.clearItemOverrides.mutationOptions({
       onSuccess: invalidateAll,
@@ -253,7 +250,6 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
     .filter((item) => item.status === "pending")
     .map((item) => item.id);
 
-  const overrideCount = items.filter((item) => isRealOverride(item)).length;
 
   const suggestedIds = filteredItems
     .filter((item) => hasLiveSuggestion(suggestionFor(item)))
@@ -445,7 +441,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-3">
       {/* Filters and bulk actions */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2">
         <Select
           value={statusFilter}
           items={STATUS_FILTER_LABELS}
@@ -453,7 +449,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
             if (v) setStatusFilter(v as StatusFilter);
           }}
         >
-          <SelectTrigger className="h-8 w-[140px] text-sm">
+          <SelectTrigger className="h-8 w-auto min-w-[112px] gap-2 text-sm">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -471,7 +467,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
             if (v) setUserFilter(v);
           }}
         >
-          <SelectTrigger className="h-8 w-[140px] text-sm">
+          <SelectTrigger className="h-8 w-auto min-w-[112px] gap-2 text-sm">
             <SelectValue placeholder="User" />
           </SelectTrigger>
           <SelectContent>
@@ -491,7 +487,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
             if (v) setCategoryFilter(v);
           }}
         >
-          <SelectTrigger className="h-8 w-[160px] text-sm">
+          <SelectTrigger className="h-8 w-auto min-w-[112px] gap-2 text-sm">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -513,7 +509,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
               if (v) setSuggestionFilter(v as SuggestionFilter);
             }}
           >
-            <SelectTrigger className="h-8 w-[150px] text-sm">
+            <SelectTrigger className="h-8 w-auto min-w-[112px] gap-2 text-sm">
               <SelectValue placeholder="Suggestions" />
             </SelectTrigger>
             <SelectContent>
@@ -528,7 +524,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 text-sm text-muted-foreground"
+            className="h-8 px-2 text-sm text-muted-foreground"
             onClick={clearFilters}
           >
             Clear all
@@ -551,7 +547,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
                     });
                 }}
               >
-                <SelectTrigger className="h-7 text-xs w-[100px]">
+                <SelectTrigger className="h-8 text-xs w-[100px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -564,7 +560,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  className="h-8 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
                   disabled={suggestProgress !== null}
                   title="Ask Jev for a category and split on the selected items"
                   onClick={() => void runSuggestions(selectedArray)}
@@ -586,7 +582,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 text-xs"
+                    className="h-8 text-xs"
                     onClick={toggle}
                   >
                     Category
@@ -596,7 +592,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-8 text-xs"
                 onClick={() =>
                   bulkSplitMutation.mutate({
                     ids: selectedArray,
@@ -609,7 +605,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-8 text-xs"
                 onClick={() =>
                   bulkSplitMutation.mutate({
                     ids: selectedArray,
@@ -622,7 +618,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-8 text-xs"
                 onClick={() =>
                   clearItemOverridesMutation.mutate({ ids: selectedArray })
                 }
@@ -632,7 +628,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-8 text-xs"
                 onClick={() => setSelectedIds(new Set())}
               >
                 Deselect
@@ -641,23 +637,11 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
           ) : (
             <>
               <span>{filteredItems.length} items</span>
-              {overrideCount > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() =>
-                    clearOverridesMutation.mutate({ month, year })
-                  }
-                >
-                  Clear overrides ({overrideCount})
-                </Button>
-              )}
               {suggestionsEnabled && unsuggestedIds.length > 0 && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  className="h-8 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
                   disabled={suggestProgress !== null}
                   onClick={() => void runSuggestions(unsuggestedIds)}
                 >
@@ -671,7 +655,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                  className="h-8 text-xs border-cyan-300 text-cyan-700 hover:bg-cyan-50"
                   title="Apply Jev's category and split suggestions without changing status"
                   onClick={() => applySuggestions(suggestedIds)}
                 >
@@ -683,14 +667,20 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs"
+                  className="h-8 text-xs"
+                  title={
+                    pendingSuggestionCount > 0
+                      ? `Also applies ${pendingSuggestionCount} Jev suggestion${
+                          pendingSuggestionCount === 1 ? "" : "s"
+                        }`
+                      : undefined
+                  }
                   onClick={() => acceptAllPending()}
                 >
-                  Accept all pending ({pendingIds.length})
-                  {pendingSuggestionCount > 0 &&
-                    ` · applies ${pendingSuggestionCount} suggestion${
-                      pendingSuggestionCount === 1 ? "" : "s"
-                    }`}
+                  Accept pending ({pendingIds.length})
+                  {pendingSuggestionCount > 0 && (
+                    <Sparkles className="h-3 w-3 ml-1 text-cyan-600" aria-hidden />
+                  )}
                 </Button>
               )}
             </>
