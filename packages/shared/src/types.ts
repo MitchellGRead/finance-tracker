@@ -43,4 +43,11 @@ export interface ReportSnapshot {
   lineItemCount: number;
   acceptedCount: number;
   rejectedCount: number;
+  /**
+   * Per line item id, the fields that move the numbers
+   * (`status|categoryId|splitRatio|amount|isCredit|userId`), so the staleness
+   * diff can say how many items changed. Absent on snapshots generated
+   * before it existed.
+   */
+  itemStates?: Record<string, string>;
 }

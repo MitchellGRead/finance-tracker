@@ -43,6 +43,13 @@
       "when": 1792971160098,
       "tag": "0005_flawless_starbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795110974004,
+      "tag": "0006_premium_loa",
+      "breakpoints": true
     }
   ]
 }

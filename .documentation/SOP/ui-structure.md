@@ -46,10 +46,15 @@ The central UI element. Displays all line items for the selected month.
 - Flagged items (category conflicts) surfaced at the top with visual highlight
 - Add manual line item row
 
-### Rule Management (Sidebar/Panel)
-- View and manage category rules (pattern -> category mapping)
-- View and manage accept/reject rules (per-user, pattern -> action)
-- Delete or edit existing rules
+### Rules Dialog (header "Rules" button)
+- Rules sorted by **impact** — stored items each decides, highest first
+- Description search: paste a description to see which rules match
+- **Needs attention** toggle (with count): rules with No matches /
+  Overshadowed by X / Conflict with X chips; chip names link to the other rule
+- Click a rule to edit it; delete asks first and previews "Deleting changes N
+  items"
+- No create form: rules are created from line items (`+ Rule` / `Update Rule`).
+  See [rule-engine.md](./rule-engine.md#seeing-which-rule-applies)
 
 ### Action Bar
 - "Generate Report" button for the selected month/year
@@ -60,14 +65,28 @@ View generated monthly snapshots and historical trends.
 
 ### Layout
 - Month comes from the header month picker (shared with Workspace); no
-  separate calendar on this page
-- Summary cards at top (total spending, settlement amount, line items +
-  when the snapshot was generated)
-- Spending Trend chart (below the cards, above everything else)
+  separate calendar on this page. The picker marks each month's lifecycle
+  stage (○ imported, ◐ reviewed, ● reported, ✓ settled) and ⚠ when it needs
+  attention, with a legend
+- **Checklist strip** at the top: Imported → Reviewed → Reported → Settled for
+  the month, each with its detail and next action (open the workspace
+  filtered to pending / uncategorized, Generate / Regenerate with the diff,
+  Settle…), the "N unusual" count, and "Regenerate all outdated" when any
+  month's report is out of date
+- Summary cards: total spending, **run rate** (3-month average, household and
+  per person, "4% below run rate"), settlement (this month's share + live
+  status + outstanding), line items + when the snapshot was generated
+- **Unusual this month** — spikes and large one-off items with View and
+  Dismiss; dismissed ones behind a toggle
+- Spending Trend chart
 - Category breakdown table
 - Per-user breakdown
-- Settlement summary ("Mitchell owes Partner $X")
+- Settlement card — share, the covering settlement's transfers, Undo
 - Trend table comparing to prior months
+
+The snapshot-vs-live split is in
+[report-generation.md](./report-generation.md#snapshot-vs-live); settling in
+[settlement.md](./settlement.md).
 
 ### Spending Trend chart
 - One line chart, one view at a time: Household, then one tab per user.
@@ -77,8 +96,10 @@ View generated monthly snapshots and historical trends.
   Categories are ranked on household spend over the whole range, so a
   category keeps its colour in every view (`--series-1..7` in `app.css`,
   fixed order, CVD-validated)
-- Legend chips toggle lines and rescale the y-axis (turn Total off to read
-  the categories)
+- Legend chips isolate-then-add: with every line showing, clicking a chip
+  shows only that line; further clicks add or remove lines; removing the last
+  one or "Show all" restores everything. The y-axis rescales to the visible
+  lines; a line never changes colour; the selection carries across views
 - Hover shows every value for that month; click a month to open its report
 - Built from report snapshots (`reports.trend`), so it matches the reports
   below it. A month with no generated report is a gap, not zero — regenerate

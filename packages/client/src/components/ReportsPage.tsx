@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import {
@@ -18,6 +18,11 @@ import {
 } from "./ui/table";
 import { Badge } from "./ui/badge";
 import { SpendingTrend } from "./SpendingTrend";
+import { MonthChecklist } from "./MonthChecklist";
+import { AnomaliesCard } from "./AnomaliesCard";
+import { SettleDialog } from "./SettleDialog";
+import { SettlementDetailCard, SettlementSummaryCard } from "./SettlementCards";
+import type { WorkspaceFilterRequest } from "../lib/workspaceFilter";
 import type { ReportSnapshot } from "@finance-tracker/shared";
 
 const formatCurrency = (amount: number) =>
@@ -36,10 +41,13 @@ interface ReportsPageProps {
   month: number;
   year: number;
   onSelectMonth: (month: number, year: number) => void;
+  onOpenWorkspace: (filter: WorkspaceFilterRequest) => void;
 }
 
-export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
+export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: ReportsPageProps) {
   const trpc = useTRPC();
+  const anomaliesRef = useRef<HTMLDivElement>(null);
+  const [settleOpen, setSettleOpen] = useState(false);
 
   const reportsListQuery = useQuery(trpc.reports.list.queryOptions());
   const reports = reportsListQuery.data ?? [];
@@ -108,14 +116,20 @@ export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
     ])
   );
 
-  const settlement = snapshot?.splitSummary.settlements[0];
 
   return (
     <div className="space-y-6">
+      <MonthChecklist
+        month={month}
+        year={year}
+        onOpenWorkspace={onOpenWorkspace}
+        onSettle={() => setSettleOpen(true)}
+        onShowAnomalies={() => anomaliesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+      />
+
       {!snapshot && !reportQuery.isLoading && (
-        <div className="flex h-32 items-center justify-center text-muted-foreground">
-          No report generated for {formatMonth(month, year)}. Go to the
-          Workspace and click "Generate Report".
+        <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+          No report generated for {formatMonth(month, year)} yet.
         </div>
       )}
 
@@ -126,7 +140,7 @@ export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
       {snapshot && (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Total Spending</CardDescription>
@@ -144,25 +158,9 @@ export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
               )}
             </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Settlement</CardDescription>
-                <CardTitle className="text-2xl">
-                  {settlement
-                    ? formatCurrency(settlement.amount)
-                    : "$0.00"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {settlement ? (
-                  <p className="text-sm text-muted-foreground">
-                    {settlement.fromUserName} owes {settlement.toUserName}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">All settled</p>
-                )}
-              </CardContent>
-            </Card>
+            <RunRateCard month={month} year={year} />
+
+            <SettlementSummaryCard snapshot={snapshot} month={month} year={year} />
 
             <Card>
               <CardHeader className="pb-2">
@@ -202,6 +200,10 @@ export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
           </div>
         </>
       )}
+
+      <SettleDialog open={settleOpen} onOpenChange={setSettleOpen} month={month} year={year} />
+
+      <AnomaliesCard ref={anomaliesRef} month={month} year={year} onOpenWorkspace={onOpenWorkspace} />
 
       <SpendingTrend month={month} year={year} onSelectMonth={onSelectMonth} />
 
@@ -386,28 +388,7 @@ export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
             })}
           </div>
 
-          {/* Settlement summary */}
-          {snapshot.splitSummary.settlements.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Settlement Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {snapshot.splitSummary.settlements.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <span className="font-medium">{s.fromUserName}</span>
-                    <span className="text-muted-foreground">owes</span>
-                    <span className="font-medium">{s.toUserName}</span>
-                    <span className="font-semibold text-lg ml-2">
-                      {formatCurrency(s.amount)}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          <SettlementDetailCard snapshot={snapshot} month={month} year={year} />
 
           {/* Trend comparison */}
           {priorSnapshots.length > 0 && (
@@ -610,6 +591,71 @@ function TrendSection({
             })}
           </TableBody>
         </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+const formatMonthShortKey = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1).toLocaleDateString("en-US", { month: "short" });
+};
+
+/** "4% below run rate" — legible without colour. */
+function describeVsAverage(vs: number | null): string | null {
+  if (vs === null) return null;
+  const pct = Math.round(Math.abs(vs) * 100);
+  if (pct === 0) return "at run rate";
+  return `${pct}% ${vs > 0 ? "above" : "below"} run rate`;
+}
+
+/**
+ * Trailing 3-month average monthly spend ending at this month, household and
+ * per person, from snapshots (so it agrees with the trend chart). Derived at
+ * view time, never stored.
+ */
+function RunRateCard({ month, year }: { month: number; year: number }) {
+  const trpc = useTRPC();
+  const { data } = useQuery(trpc.reports.runRate.queryOptions({ month, year }));
+  const household = data?.figures.find((f) => f.key === "household");
+  const people = data?.figures.filter((f) => f.key !== "household") ?? [];
+  const missing = data ? data.window.filter((m) => !data.monthsUsed.includes(m)) : [];
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardDescription>Run rate · {data?.window.length ?? 3}-month average</CardDescription>
+        <CardTitle className="text-2xl">
+          {household?.average != null ? formatCurrency(household.average) : "—"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1 text-xs text-muted-foreground">
+        {household && describeVsAverage(household.vsAverage) && (
+          <p className="text-foreground">This month {describeVsAverage(household.vsAverage)}</p>
+        )}
+        {people.map((p) => (
+          <div key={p.key} className="flex justify-between gap-2 tabular-nums">
+            <span>{p.label}</span>
+            <span>
+              {p.average != null ? formatCurrency(p.average) : "—"}
+              {p.vsAverage !== null && (
+                <span className="ml-1.5">
+                  ({Math.round(Math.abs(p.vsAverage) * 100)}% {p.vsAverage >= 0 ? "above" : "below"})
+                </span>
+              )}
+            </span>
+          </div>
+        ))}
+        {data && (
+          <p className="pt-1 text-[11px]">
+            {data.monthsUsed.length === 0
+              ? "No reports in the window"
+              : `${data.monthsUsed.map(formatMonthShortKey).join(", ")} · ${data.monthsUsed.length} of ${data.window.length} months`}
+            {missing.length > 0 && data.monthsUsed.length > 0 && (
+              <> · no report for {missing.map(formatMonthShortKey).join(", ")}</>
+            )}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

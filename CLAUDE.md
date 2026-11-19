@@ -51,7 +51,7 @@ finance-tracker/
 
 ### API
 - All client-server communication goes through tRPC routers
-- Routers organized by domain: `lineItems`, `categories`, `reports`, `statements`, `users`, `rules`, `suggestions`
+- Routers organized by domain: `lineItems`, `categories`, `reports`, `statements`, `users`, `rules`, `suggestions`, `settlements`
 - Input validation via Zod schemas on tRPC procedures
 - `lineItems.update` blind-spreads its input into `.set()` — the Zod schema is
   the only thing keeping it safe. Never widen it to server-owned columns.
@@ -91,6 +91,17 @@ finance-tracker/
 - Confirming a suggestion never sets an override flag (those mean "a human
   decided"); provenance lives in `suggestion_status`/`suggestion_model`
 - See `.documentation/SOP/ai-suggestions.md`
+
+### Reports and settlement
+- A snapshot holds facts about **one month's items**; anything spanning months
+  (settlement status, outstanding, run rate, anomaly baselines) is derived at
+  view time, never stored in it
+- "Report outdated" is a **diff of numbers** against a live `computeReport`,
+  never `updated_at` vs `generatedAt` — bulk touches change timestamps only
+- Lifecycle stages and flags are derived (`services/monthStatus.ts`), never stored
+- Settlement amounts are recomputed server-side from month status; the client
+  only picks months and enters transfers
+- See `.documentation/SOP/report-generation.md` and `settlement.md`
 
 ### General
 - No authentication — users are named participants, not authenticated accounts

@@ -27,8 +27,10 @@ export const rulesRouter = router({
   }),
 
   /**
-   * Per rule: items it matches, items it wins, and the rules that beat it
-   * elsewhere. Across every stored line item, regardless of month or status.
+   * Per rule: items it matches and wins, the rules that beat it or tie with
+   * it, and how many items deleting it would change. Across every stored line
+   * item, regardless of month or status. Rules are created from line items
+   * (`lineItems.acceptAndCreateRules`), never directly.
    */
   coverage: publicProcedure.query(async () => {
     return computeRuleCoverage(
@@ -39,51 +41,6 @@ export const rulesRouter = router({
         .all()
     );
   }),
-
-  create: publicProcedure
-    .input(
-      z.object({
-        pattern: z.string().min(1),
-        ruleType: z.enum(["split", "personal"]).default("split"),
-        userId: z.number().nullable().optional(),
-        action: z.enum(["accept", "reject"]).nullable().optional(),
-        categoryId: z.number().nullable().optional(),
-        createdByUserId: z.number(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      if (input.ruleType === "personal" && input.userId == null) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Personal rules require a userId",
-        });
-      }
-      if (input.ruleType === "split" && input.userId != null) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Split rules must not have a userId",
-        });
-      }
-      if (input.action == null && input.categoryId == null) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Rule must set at least an action or a category",
-        });
-      }
-
-      return db
-        .insert(rules)
-        .values({
-          pattern: input.pattern,
-          ruleType: input.ruleType,
-          userId: input.userId ?? null,
-          action: input.action ?? null,
-          categoryId: input.categoryId ?? null,
-          createdByUserId: input.createdByUserId,
-        })
-        .returning()
-        .get();
-    }),
 
   update: publicProcedure
     .input(

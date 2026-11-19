@@ -6,6 +6,7 @@ import { categoriesRouter } from "./categories";
 import { rulesRouter } from "./rules";
 import { reportsRouter } from "./reports";
 import { suggestionsRouter } from "./suggestions";
+import { settlementsRouter } from "./settlements";
 
 export const appRouter = router({
   users: usersRouter,
@@ -15,6 +16,7 @@ export const appRouter = router({
   rules: rulesRouter,
   reports: reportsRouter,
   suggestions: suggestionsRouter,
+  settlements: settlementsRouter,
 });
 
 export type AppRouter = typeof appRouter;

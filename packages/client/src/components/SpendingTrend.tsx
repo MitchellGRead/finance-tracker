@@ -7,8 +7,11 @@ import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 /**
  * Month-over-month spending, one view at a time: the household, then each
  * person. Lines are Total plus the top categories (ranked on household spend,
- * so a category keeps its colour across views); click a legend chip to hide a
- * line and rescale, or click a month on the chart to open that month's report.
+ * so a category keeps its colour across views). Clicking a legend chip while
+ * every line shows isolates it; further clicks add or remove lines; removing
+ * the last one, or "Show all", restores every line. The y-axis rescales to
+ * what is visible, and the selection carries across views. Click a month on
+ * the chart to open that month's report.
  * Data comes from generated report snapshots, so a month with no report is a
  * gap in the line.
  */
@@ -97,7 +100,9 @@ export function SpendingTrend({ month, year, onSelectMonth }: SpendingTrendProps
   const trend = trendQuery.data;
 
   const [viewKey, setViewKey] = useState("household");
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // null = every series; otherwise the keys shown. Keys are shared across
+  // views (categories are ranked once), so the selection carries over.
+  const [visible, setVisible] = useState<Set<string> | null>(null);
 
   if (!trend || trend.months.length === 0) return null;
 
@@ -105,11 +110,20 @@ export function SpendingTrend({ month, year, onSelectMonth }: SpendingTrendProps
   const selectedKey = `${year}-${String(month).padStart(2, "0")}`;
   const missing = trend.months.filter((_, i) => view.series[0].values[i] === null);
 
+  const viewKeys = view.series.map((s) => s.key);
+  const shownKeys =
+    visible === null || !viewKeys.some((k) => visible.has(k))
+      ? new Set(viewKeys)
+      : visible;
+  const allShown = viewKeys.every((k) => shownKeys.has(k));
+
   const toggle = (key: string) =>
-    setHidden((prev) => {
-      const next = new Set(prev);
+    setVisible(() => {
+      if (allShown) return new Set([key]);
+      const next = new Set(shownKeys);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      if (next.size === 0 || viewKeys.every((k) => next.has(k))) return null;
       return next;
     });
 
@@ -142,7 +156,7 @@ export function SpendingTrend({ month, year, onSelectMonth }: SpendingTrendProps
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Lines shown">
           {view.series.map((s) => {
-            const off = hidden.has(s.key);
+            const off = !shownKeys.has(s.key);
             return (
               <button
                 key={s.key}
@@ -150,7 +164,7 @@ export function SpendingTrend({ month, year, onSelectMonth }: SpendingTrendProps
                 aria-pressed={!off}
                 onClick={() => toggle(s.key)}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:bg-muted ${
-                  off ? "text-muted-foreground line-through opacity-60" : "text-foreground"
+                  off ? "text-muted-foreground opacity-50" : "text-foreground"
                 }`}
               >
                 <span
@@ -163,10 +177,19 @@ export function SpendingTrend({ month, year, onSelectMonth }: SpendingTrendProps
               </button>
             );
           })}
+          {!allShown && (
+            <button
+              type="button"
+              onClick={() => setVisible(null)}
+              className="rounded-full px-2.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Show all
+            </button>
+          )}
         </div>
         <TrendChart
           months={trend.months}
-          series={view.series.filter((s) => !hidden.has(s.key))}
+          series={view.series.filter((s) => shownKeys.has(s.key))}
           selectedKey={selectedKey}
           onSelectMonth={onSelectMonth}
         />
