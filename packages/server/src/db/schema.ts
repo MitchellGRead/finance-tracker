@@ -1,4 +1,4 @@
-import { int, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { int, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 const timestamps = {
@@ -110,3 +110,25 @@ export const reportSnapshots = sqliteTable("report_snapshots", {
   data: text("data").notNull(), // JSON blob
   ...timestamps,
 });
+
+/**
+ * Operator decisions that an anomaly is expected ("tax payment"). Kept apart
+ * from snapshots so regenerating a report or recomputing baselines never
+ * resurrects one. Keyed by month + kind + subject (`cat:<id|null>` or
+ * `item:<id>`).
+ */
+export const anomalyDismissals = sqliteTable(
+  "anomaly_dismissals",
+  {
+    id: int("id").primaryKey({ autoIncrement: true }),
+    periodYear: int("period_year").notNull(),
+    periodMonth: int("period_month").notNull(),
+    kind: text("kind").notNull(), // 'category_spike' | 'large_item'
+    subjectKey: text("subject_key").notNull(),
+    note: text("note"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("anomaly_dismissals_subject_idx").on(t.periodYear, t.periodMonth, t.kind, t.subjectKey),
+  ]
+);

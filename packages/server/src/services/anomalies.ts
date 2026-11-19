@@ -208,3 +208,33 @@ export function detectAnomalies(input: {
 
   return anomalies.sort((a, b) => b.amount - a.amount);
 }
+
+export interface AnomalyDismissal {
+  periodYear: number;
+  periodMonth: number;
+  kind: string;
+  subjectKey: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/**
+ * Attach the operator's dismissals. Matching is by month + kind + subject
+ * only, so a dismissal survives regenerating the report or a moved baseline.
+ */
+export function applyDismissals(
+  anomalies: Anomaly[],
+  dismissals: AnomalyDismissal[],
+  month: number,
+  year: number
+): Array<Anomaly & { dismissal: { note: string | null; dismissedAt: string } | null }> {
+  const byKey = new Map(
+    dismissals
+      .filter((d) => d.periodYear === year && d.periodMonth === month)
+      .map((d) => [`${d.kind}|${d.subjectKey}`, d])
+  );
+  return anomalies.map((a) => {
+    const d = byKey.get(`${a.kind}|${a.subjectKey}`);
+    return { ...a, dismissal: d ? { note: d.note, dismissedAt: d.createdAt } : null };
+  });
+}

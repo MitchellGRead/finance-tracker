@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ReportSnapshot } from "@finance-tracker/shared";
-import { detectAnomalies, merchantKey, median, type AnomalyItem } from "./anomalies";
+import { applyDismissals, detectAnomalies, merchantKey, median, type AnomalyItem } from "./anomalies";
 
 // Synthetic fixtures shaped on the live cases the PRD names: Sep 2026
 // (Shambhala + ICBC renewal) and Apr 2026 (a CRA payment).
@@ -185,5 +185,37 @@ describe("helpers", () => {
     expect(median([])).toBe(0);
     expect(median([3, 1, 2])).toBe(2);
     expect(median([4, 1, 3, 2])).toBe(2.5);
+  });
+});
+
+describe("applyDismissals", () => {
+  const detect = (snaps: ReportSnapshot[]) =>
+    detectAnomalies({ month: 9, year: 2026, snapshots: snaps, items: septemberItems, categoryName });
+  const dismissal = {
+    periodYear: 2026,
+    periodMonth: 9,
+    kind: "category_spike",
+    subjectKey: `cat:${CAR}`,
+    note: "expected — insurance renewal",
+    createdAt: "2026-10-27 00:00:00",
+  };
+
+  it("keeps a dismissal after the report is regenerated with different numbers", () => {
+    const regenerated = snapshots.map((s) =>
+      s.periodMonth === 9 ? snapshot(2026, 9, { [RECREATION]: 3300, [CAR]: 1400, [RENT]: 2175 }) : s
+    );
+    for (const snaps of [snapshots, regenerated]) {
+      const result = applyDismissals(detect(snaps), [dismissal], 9, 2026);
+      expect(result.find((a) => a.label === "Car")!.dismissal).toEqual({
+        note: "expected — insurance renewal",
+        dismissedAt: "2026-10-27 00:00:00",
+      });
+      expect(result.find((a) => a.label === "Recreation")!.dismissal).toBeNull();
+    }
+  });
+
+  it("does not carry a dismissal into another month", () => {
+    const result = applyDismissals(detect(snapshots), [{ ...dismissal, periodMonth: 8 }], 9, 2026);
+    expect(result.every((a) => a.dismissal === null)).toBe(true);
   });
 });

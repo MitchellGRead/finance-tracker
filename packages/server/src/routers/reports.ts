@@ -2,17 +2,22 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { reportSnapshots, lineItems, categories, users } from "../db/schema";
+import { reportSnapshots, lineItems, categories, users, anomalyDismissals } from "../db/schema";
 import { loadSnapshots, saveSnapshot } from "../services/reportGenerator";
 import { buildReportTrend } from "../services/reportTrend";
 import { computeRunRate } from "../services/runRate";
-import { detectAnomalies } from "../services/anomalies";
+import { applyDismissals, detectAnomalies } from "../services/anomalies";
 import { computeMonthStatuses } from "../services/monthStatus";
 import { monthKey } from "../lib/months";
 
 const periodInput = z.object({
   month: z.number().min(1).max(12),
   year: z.number(),
+});
+
+const anomalySubject = periodInput.extend({
+  kind: z.enum(["category_spike", "large_item"]),
+  subjectKey: z.string().regex(/^(cat:(\d+|null)|item:\d+)$/),
 });
 
 function loadMonthStatuses() {
@@ -92,10 +97,13 @@ export const reportsRouter = router({
    */
   status: publicProcedure.query(async () => loadMonthStatuses()),
 
-  /** "Unusual this month": category spikes and large one-off items. */
+  /**
+   * "Unusual this month": category spikes and large one-off items, each with
+   * the operator's dismissal (if any) attached.
+   */
   anomalies: publicProcedure.input(periodInput).query(async ({ input }) => {
     const allCategories = db.select({ id: categories.id, name: categories.name }).from(categories).all();
-    return detectAnomalies({
+    const anomalies = detectAnomalies({
       month: input.month,
       year: input.year,
       snapshots: loadSnapshots(),
@@ -114,6 +122,55 @@ export const reportsRouter = router({
       categoryName: (id) =>
         id === null ? "Uncategorized" : allCategories.find((c) => c.id === id)?.name ?? "Unknown",
     });
+    const dismissals = db
+      .select()
+      .from(anomalyDismissals)
+      .where(
+        and(eq(anomalyDismissals.periodYear, input.year), eq(anomalyDismissals.periodMonth, input.month))
+      )
+      .all();
+    return applyDismissals(anomalies, dismissals, input.month, input.year);
+  }),
+
+  /** Mark an anomaly as expected, with an optional note. Idempotent. */
+  dismissAnomaly: publicProcedure
+    .input(anomalySubject.extend({ note: z.string().trim().max(500).nullable().optional() }))
+    .mutation(async ({ input }) => {
+      const note = input.note ? input.note : null;
+      return db
+        .insert(anomalyDismissals)
+        .values({
+          periodYear: input.year,
+          periodMonth: input.month,
+          kind: input.kind,
+          subjectKey: input.subjectKey,
+          note,
+        })
+        .onConflictDoUpdate({
+          target: [
+            anomalyDismissals.periodYear,
+            anomalyDismissals.periodMonth,
+            anomalyDismissals.kind,
+            anomalyDismissals.subjectKey,
+          ],
+          set: { note },
+        })
+        .returning()
+        .get();
+    }),
+
+  undismissAnomaly: publicProcedure.input(anomalySubject).mutation(async ({ input }) => {
+    return db
+      .delete(anomalyDismissals)
+      .where(
+        and(
+          eq(anomalyDismissals.periodYear, input.year),
+          eq(anomalyDismissals.periodMonth, input.month),
+          eq(anomalyDismissals.kind, input.kind),
+          eq(anomalyDismissals.subjectKey, input.subjectKey)
+        )
+      )
+      .run();
   }),
 
   delete: publicProcedure
