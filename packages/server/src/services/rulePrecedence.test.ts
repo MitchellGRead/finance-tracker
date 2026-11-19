@@ -105,8 +105,75 @@ describe("computeRuleCoverage", () => {
       { description: PAYCHECK, userId: MITCHELL },
     ]);
     expect(coverage).toEqual([
-      { ruleId: broad.id, matches: 3, wins: 1, beatenBy: [{ ruleId: specific.id, count: 2 }] },
-      { ruleId: specific.id, matches: 2, wins: 2, beatenBy: [] },
+      {
+        ruleId: broad.id,
+        matches: 3,
+        wins: 1,
+        beatenBy: [{ ruleId: specific.id, count: 2 }],
+        conflicts: [],
+        affectedIfDeleted: 1,
+      },
+      {
+        ruleId: specific.id,
+        matches: 2,
+        wins: 2,
+        beatenBy: [],
+        conflicts: [],
+        affectedIfDeleted: 2,
+      },
     ]);
+  });
+
+  it("flags a same-type tie at the top as a conflict on both rules", () => {
+    const older = rule({ pattern: "FIX HEALTHCARE PAY", action: "accept", createdAt: "2026-01-01" });
+    const twin = rule({ pattern: "fix   healthcare pay", action: "reject", createdAt: "2026-02-01" });
+    const coverage = computeRuleCoverage([older, twin], [
+      { description: PAYCHECK, userId: JADYN },
+      { description: PAYCHECK, userId: JADYN },
+    ]);
+    const byId = new Map(coverage.map((c) => [c.ruleId, c]));
+    expect(byId.get(older.id)!.conflicts).toEqual([{ ruleId: twin.id, count: 2 }]);
+    expect(byId.get(twin.id)!.conflicts).toEqual([{ ruleId: older.id, count: 2 }]);
+    expect(byId.get(twin.id)!.wins).toBe(0);
+  });
+
+  it("ignores ties below a longer winner, and personal-vs-split ties", () => {
+    const a = rule({ pattern: "FIX", createdAt: "2026-01-01" });
+    const b = rule({ pattern: "fix", createdAt: "2026-02-01" });
+    const longer = rule({ pattern: "FIX HEALTHCARE" });
+    const split = rule({ pattern: "FIX HEALTHCARE", ruleType: "split", userId: null });
+    const coverage = computeRuleCoverage([a, b, longer, split], [
+      { description: PAYCHECK, userId: JADYN },
+    ]);
+    expect(coverage.every((c) => c.conflicts.length === 0)).toBe(true);
+  });
+
+  it("counts only items whose outcome changes when the rule is deleted", () => {
+    // Same outcome as the broad rule it shadows: deleting it changes nothing.
+    const broadAccept = rule({ pattern: "THRIFTY", action: "accept", categoryId: 4 });
+    const sameOutcome = rule({ pattern: "THRIFTY FOODS", action: "accept", categoryId: 4 });
+    // Different category: deleting it moves its items to the broad rule.
+    const otherCategory = rule({ pattern: "THRIFTY FOODS #9461", action: "accept", categoryId: 5 });
+    const coverage = computeRuleCoverage([broadAccept, sameOutcome, otherCategory], [
+      { description: "THRIFTY FOODS #1000", userId: JADYN },
+      { description: "THRIFTY FOODS #9461 VIC", userId: JADYN },
+      { description: "THRIFTY FOODS #9461 VIC", userId: JADYN },
+      { description: "THRIFTY WAREHOUSE", userId: JADYN },
+    ]);
+    const byId = new Map(coverage.map((c) => [c.ruleId, c]));
+    expect(byId.get(sameOutcome.id)!.affectedIfDeleted).toBe(0);
+    expect(byId.get(otherCategory.id)!.affectedIfDeleted).toBe(2);
+    // The last-resort rule leaves its items with no rule at all.
+    expect(byId.get(broadAccept.id)!.affectedIfDeleted).toBe(1);
+  });
+
+  it("has nothing to change when a rule is overshadowed or matches nothing", () => {
+    const unused = rule({ pattern: "NEVER SEEN" });
+    const coverage = computeRuleCoverage([broad, specific, unused], [
+      { description: PAYCHECK, userId: JADYN },
+    ]);
+    const byId = new Map(coverage.map((c) => [c.ruleId, c]));
+    expect(byId.get(broad.id)!).toMatchObject({ matches: 1, wins: 0, affectedIfDeleted: 0 });
+    expect(byId.get(unused.id)!).toMatchObject({ matches: 0, wins: 0, affectedIfDeleted: 0 });
   });
 });
