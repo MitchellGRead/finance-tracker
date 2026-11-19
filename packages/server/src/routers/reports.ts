@@ -2,11 +2,12 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { reportSnapshots, lineItems, categories } from "../db/schema";
+import { reportSnapshots, lineItems, categories, users } from "../db/schema";
 import { generateReportData, loadSnapshots } from "../services/reportGenerator";
 import { buildReportTrend } from "../services/reportTrend";
 import { computeRunRate } from "../services/runRate";
 import { detectAnomalies } from "../services/anomalies";
+import { computeMonthStatuses } from "../services/monthStatus";
 import { monthKey } from "../lib/months";
 
 const periodInput = z.object({
@@ -96,6 +97,21 @@ export const reportsRouter = router({
   /** Trailing average monthly spend ending at the month, from snapshots. */
   runRate: publicProcedure.input(periodInput).query(async ({ input }) => {
     return computeRunRate(buildReportTrend(loadSnapshots()), monthKey(input.year, input.month));
+  }),
+
+  /**
+   * Every month's lifecycle stage and flags (outdated report, adjustment
+   * pending, unreviewed), plus the outstanding balance. One call for all
+   * months; a full live recompute is cheap at household scale.
+   */
+  status: publicProcedure.query(async () => {
+    return computeMonthStatuses({
+      items: db.select().from(lineItems).all(),
+      users: db.select().from(users).all(),
+      categories: db.select().from(categories).all(),
+      snapshots: loadSnapshots(),
+      settlements: [],
+    });
   }),
 
   /** "Unusual this month": category spikes and large one-off items. */

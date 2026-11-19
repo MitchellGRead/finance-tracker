@@ -192,6 +192,9 @@ export function computeReport(
     }
   }
 
+  const itemStates: Record<string, string> = {};
+  for (const item of periodItems) itemStates[String(item.id)] = itemState(item);
+
   return {
     periodMonth: month,
     periodYear: year,
@@ -202,5 +205,18 @@ export function computeReport(
     lineItemCount,
     acceptedCount,
     rejectedCount,
+    itemStates,
   };
+}
+
+/** The fields of an item that change a report's numbers. */
+export function itemState(item: LineItemRow): string {
+  return [
+    item.status,
+    item.categoryId ?? "-",
+    item.splitRatio,
+    item.amount,
+    item.isCredit ? 1 : 0,
+    item.userId,
+  ].join("|");
 }
