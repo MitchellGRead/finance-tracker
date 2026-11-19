@@ -43,3 +43,32 @@ export function describeOwed(amount: number, pair: Pair | null | undefined): str
   const who = whoOwes(amount, pair);
   return who ? `${who} ${formatCurrency(Math.abs(amount))}` : "Nothing owed";
 }
+
+/** "Mitchell paid Jadyn" for a canonical signed amount that was recorded as settled. */
+export function whoPaid(amount: number, pair: Pair | null | undefined): string | null {
+  if (!pair || Math.abs(amount) < 0.005) return null;
+  const [from, to] = amount > 0 ? [pair.a, pair.b] : [pair.b, pair.a];
+  return `${from.name} paid ${to.name}`;
+}
+
+/**
+ * For an open month whose due differs from its share — an adjustment for it
+ * was paid by a settlement that is still recorded after the one covering the
+ * month was undone — say why. Null when there is nothing to explain.
+ */
+export function describeAlreadyPaid(
+  share: { live: number; due: number },
+  pair: Pair | null | undefined
+): string | null {
+  const paid = share.live - share.due;
+  const who = whoPaid(paid, pair);
+  if (!who) return null;
+  return `Month's share: ${describeOwed(share.live, pair)}; ${who} ${formatCurrency(Math.abs(paid))} for it in an earlier adjustment.`;
+}
+
+/** "Undo this settlement? Sep 2026 becomes open again." */
+export function describeUndo(coveredMonths: string[]): string {
+  if (coveredMonths.length === 0) return "Undo this settlement? What it paid is owed again.";
+  const verb = coveredMonths.length === 1 ? "becomes" : "become";
+  return `Undo this settlement? ${formatMonthRange(coveredMonths)} ${verb} open again.`;
+}

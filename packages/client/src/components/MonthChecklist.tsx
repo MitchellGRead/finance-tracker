@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { useTRPC } from "../lib/trpc";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
-import { describeOwed, formatCurrency, formatDay, formatMonthKey, formatMonthRange, whoOwes } from "../lib/format";
+import { describeAlreadyPaid, describeOwed, formatCurrency, formatDay, formatMonthKey, formatMonthRange, whoOwes } from "../lib/format";
 import type { WorkspaceFilterRequest } from "../lib/workspaceFilter";
 
 /**
@@ -226,6 +226,9 @@ export function MonthChecklist({ month, year, onOpenWorkspace, onSettle, onShowA
             ) : itemCount > 0 ? (
               <>
                 Open · {describeOwed(m!.share.due, pair)} this month
+                {describeAlreadyPaid(m!.share, pair) && (
+                  <span className="block">{describeAlreadyPaid(m!.share, pair)}</span>
+                )}
                 {data.outstanding.openMonths.length > 1 && (
                   <span className="block">
                     Part of {formatCurrency(Math.abs(data.outstanding.total))} outstanding (

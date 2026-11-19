@@ -5,7 +5,16 @@ import type { ReportSnapshot } from "@finance-tracker/shared";
 import { useTRPC } from "../lib/trpc";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { describeOwed, formatCurrency, formatDay, formatMonthRange, whoOwes } from "../lib/format";
+import {
+  describeAlreadyPaid,
+  describeOwed,
+  describeUndo,
+  formatCurrency,
+  formatDay,
+  formatMonthRange,
+  whoOwes,
+  type Pair,
+} from "../lib/format";
 
 /**
  * A month's settlement, following the snapshot-vs-live principle: the share
@@ -64,6 +73,11 @@ export function SettlementSummaryCard({
             </p>
           )
         )}
+        {m && !m.settlement && describeAlreadyPaid(m.share, data?.pair) && (
+          <p>
+            {describeOwed(m.share.due, data?.pair)} still due. {describeAlreadyPaid(m.share, data?.pair)}
+          </p>
+        )}
         {m?.flags.adjustmentPending && m.settlement && (
           <p className="flex items-start gap-1 text-foreground">
             <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />
@@ -94,20 +108,56 @@ export function SettlementDetailCard({
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data, month: m } = useMonthStatus(month, year);
-  const listQuery = useQuery({ ...trpc.settlements.list.queryOptions(), enabled: Boolean(m?.settlement) });
+  const listQuery = useQuery({ ...trpc.settlements.list.queryOptions(), enabled: Boolean(m) });
   const settlement = listQuery.data?.find((s) => s.id === m?.settlement?.settlementId);
-  const [confirmUndo, setConfirmUndo] = useState(false);
+  // Later settlements that paid an adjustment for this month. Listed (with
+  // their own Undo) because one that covered no months has nowhere else to show.
+  const adjustments = (listQuery.data ?? [])
+    .filter((s) => s.id !== settlement?.id)
+    .flatMap((s) =>
+      s.months
+        .filter((row) => row.isAdjustment && row.year === year && row.month === month)
+        .map((row) => ({ settlement: s, amount: row.amountOwed }))
+    )
+    .reverse();
+  const [confirmUndoId, setConfirmUndoId] = useState<number | null>(null);
   const undo = useMutation(
     trpc.settlements.delete.mutationOptions({
       onSuccess: () => {
-        setConfirmUndo(false);
+        setConfirmUndoId(null);
         queryClient.invalidateQueries({ queryKey: trpc.reports.pathKey() });
         queryClient.invalidateQueries({ queryKey: trpc.settlements.pathKey() });
       },
     })
   );
 
-  if (snapshot.splitSummary.settlements.length === 0 && !m?.settlement) return null;
+  const undoControls = (id: number, coveredMonths: string[]) => (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      {confirmUndoId === id ? (
+        <>
+          <span className="text-xs">{describeUndo(coveredMonths)}</span>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="h-7 text-xs"
+            disabled={undo.isPending}
+            onClick={() => undo.mutate({ id })}
+          >
+            Undo settlement
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmUndoId(null)}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmUndoId(id)}>
+          Undo settlement…
+        </Button>
+      )}
+    </div>
+  );
+
+  if (snapshot.splitSummary.settlements.length === 0 && !m?.settlement && adjustments.length === 0) return null;
 
   return (
     <Card>
@@ -157,34 +207,41 @@ export function SettlementDetailCard({
                 pending ({whoOwes(m.settlement.pendingAdjustment, data?.pair)}). The next settlement includes it.
               </p>
             )}
-            <div className="flex items-center gap-2 pt-1">
-              {confirmUndo ? (
-                <>
-                  <span className="text-xs">
-                    Undo this settlement? {formatMonthRange(m.settlement.coveredMonths)} become open again.
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    className="h-7 text-xs"
-                    disabled={undo.isPending}
-                    onClick={() => undo.mutate({ id: settlement.id })}
-                  >
-                    Undo settlement
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmUndo(false)}>
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmUndo(true)}>
-                  Undo settlement…
-                </Button>
-              )}
-            </div>
+            {undoControls(settlement.id, m.settlement.coveredMonths)}
           </div>
         )}
+
+        {adjustments.map(({ settlement: s, amount }) => {
+          const covered = s.months
+            .filter((row) => !row.isAdjustment)
+            .map((row) => `${row.year}-${String(row.month).padStart(2, "0")}`)
+            .sort();
+          const paidOn = s.payments.map((p) => p.paidOn).sort().at(-1) ?? s.createdAt;
+          return (
+            <div key={s.id} className="space-y-1 rounded-md border p-3 text-xs">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium">Adjustment settled {formatDay(paidOn)}</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {describePaid(amount, s.fromUserId, s.toUserId, data?.pair)}
+                </span>
+              </div>
+              <p className="text-muted-foreground">
+                {covered.length > 0
+                  ? `Paid alongside ${formatMonthRange(covered)}.`
+                  : "Paid on its own, after this month changed."}
+              </p>
+              {undoControls(s.id, covered)}
+            </div>
+          );
+        })}
       </CardContent>
     </Card>
   );
+}
+
+/** "Mitchell paid Jadyn $210.11" for a row signed in its settlement's from → to direction. */
+function describePaid(amount: number, fromUserId: number, toUserId: number, pair: Pair | null | undefined): string {
+  const name = (id: number) => (pair ? [pair.a, pair.b].find((u) => u.id === id)?.name : undefined) ?? "?";
+  const [from, to] = amount >= 0 ? [fromUserId, toUserId] : [toUserId, fromUserId];
+  return `${name(from)} paid ${name(to)} ${formatCurrency(Math.abs(amount))}`;
 }
