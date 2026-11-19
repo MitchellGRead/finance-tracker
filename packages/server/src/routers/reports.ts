@@ -3,8 +3,15 @@ import { eq, and, desc } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
 import { reportSnapshots } from "../db/schema";
-import { generateReportData } from "../services/reportGenerator";
+import { generateReportData, loadSnapshots } from "../services/reportGenerator";
 import { buildReportTrend } from "../services/reportTrend";
+import { computeRunRate } from "../services/runRate";
+import { monthKey } from "../lib/months";
+
+const periodInput = z.object({
+  month: z.number().min(1).max(12),
+  year: z.number(),
+});
 
 export const reportsRouter = router({
   generate: publicProcedure
@@ -82,11 +89,12 @@ export const reportsRouter = router({
 
   /** Month-over-month series for the trend chart, from every snapshot. */
   trend: publicProcedure.query(async () => {
-    const snapshots = db
-      .select({ data: reportSnapshots.data })
-      .from(reportSnapshots)
-      .all();
-    return buildReportTrend(snapshots.map((s) => JSON.parse(s.data)));
+    return buildReportTrend(loadSnapshots());
+  }),
+
+  /** Trailing average monthly spend ending at the month, from snapshots. */
+  runRate: publicProcedure.input(periodInput).query(async ({ input }) => {
+    return computeRunRate(buildReportTrend(loadSnapshots()), monthKey(input.year, input.month));
   }),
 
   delete: publicProcedure

@@ -126,7 +126,7 @@ export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
       {snapshot && (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Total Spending</CardDescription>
@@ -143,6 +143,8 @@ export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
                 </CardContent>
               )}
             </Card>
+
+            <RunRateCard month={month} year={year} />
 
             <Card>
               <CardHeader className="pb-2">
@@ -610,6 +612,71 @@ function TrendSection({
             })}
           </TableBody>
         </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+const formatMonthShortKey = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1).toLocaleDateString("en-US", { month: "short" });
+};
+
+/** "4% below run rate" — legible without colour. */
+function describeVsAverage(vs: number | null): string | null {
+  if (vs === null) return null;
+  const pct = Math.round(Math.abs(vs) * 100);
+  if (pct === 0) return "at run rate";
+  return `${pct}% ${vs > 0 ? "above" : "below"} run rate`;
+}
+
+/**
+ * Trailing 3-month average monthly spend ending at this month, household and
+ * per person, from snapshots (so it agrees with the trend chart). Derived at
+ * view time, never stored.
+ */
+function RunRateCard({ month, year }: { month: number; year: number }) {
+  const trpc = useTRPC();
+  const { data } = useQuery(trpc.reports.runRate.queryOptions({ month, year }));
+  const household = data?.figures.find((f) => f.key === "household");
+  const people = data?.figures.filter((f) => f.key !== "household") ?? [];
+  const missing = data ? data.window.filter((m) => !data.monthsUsed.includes(m)) : [];
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardDescription>Run rate · {data?.window.length ?? 3}-month average</CardDescription>
+        <CardTitle className="text-2xl">
+          {household?.average != null ? formatCurrency(household.average) : "—"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1 text-xs text-muted-foreground">
+        {household && describeVsAverage(household.vsAverage) && (
+          <p className="text-foreground">This month {describeVsAverage(household.vsAverage)}</p>
+        )}
+        {people.map((p) => (
+          <div key={p.key} className="flex justify-between gap-2 tabular-nums">
+            <span>{p.label}</span>
+            <span>
+              {p.average != null ? formatCurrency(p.average) : "—"}
+              {p.vsAverage !== null && (
+                <span className="ml-1.5">
+                  ({Math.round(Math.abs(p.vsAverage) * 100)}% {p.vsAverage >= 0 ? "above" : "below"})
+                </span>
+              )}
+            </span>
+          </div>
+        ))}
+        {data && (
+          <p className="pt-1 text-[11px]">
+            {data.monthsUsed.length === 0
+              ? "No reports in the window"
+              : `${data.monthsUsed.map(formatMonthShortKey).join(", ")} · ${data.monthsUsed.length} of ${data.window.length} months`}
+            {missing.length > 0 && data.monthsUsed.length > 0 && (
+              <> · no report for {missing.map(formatMonthShortKey).join(", ")}</>
+            )}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

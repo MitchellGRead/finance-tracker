@@ -101,12 +101,8 @@ export function App() {
   const generateMutation = useMutation(
     trpc.reports.generate.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: trpc.reports.list.queryKey(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: trpc.reports.get.queryKey(),
-        });
+        // Every reports query (trend, run rate, status) reads snapshots.
+        queryClient.invalidateQueries({ queryKey: trpc.reports.pathKey() });
         setPage("reports");
       },
     })

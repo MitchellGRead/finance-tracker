@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { lineItems, categories, users } from "../db/schema";
+import { lineItems, categories, users, reportSnapshots } from "../db/schema";
 import { computeReport } from "./computeReport";
 import type { ReportSnapshot } from "@finance-tracker/shared";
 
@@ -14,4 +14,13 @@ export function generateReportData(
     month,
     year
   );
+}
+
+/** Every stored report snapshot, parsed. */
+export function loadSnapshots(): ReportSnapshot[] {
+  return db
+    .select({ data: reportSnapshots.data })
+    .from(reportSnapshots)
+    .all()
+    .map((s) => JSON.parse(s.data) as ReportSnapshot);
 }
