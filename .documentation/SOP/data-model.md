@@ -114,5 +114,68 @@ Stored monthly report summaries.
 The `data` JSON blob contains:
 - Per-category totals (all users combined)
 - Per-user breakdown by category
-- Split calculations and net amounts owed
-- Metadata for trend comparisons
+- Split calculations and net amounts owed — the month's **share owed**
+- `itemStates` — per line item id, `status|category_id|split_ratio|amount|is_credit|user_id`,
+  so the staleness diff can count changed items (absent on older snapshots)
+
+A snapshot holds facts about **one month's items** only. Anything that spans
+months — settlement status, outstanding balance, run rate, anomaly baselines —
+is derived at view time and never stored in it. See
+[report-generation.md](./report-generation.md#snapshot-vs-live).
+
+### anomaly_dismissals
+Operator decisions that an "Unusual this month" anomaly was expected. Stored
+apart from snapshots so regenerating a report never resurrects one.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | integer (PK) | Auto-increment |
+| period_year | integer | |
+| period_month | integer | 1-12 |
+| kind | text | 'category_spike' \| 'large_item' |
+| subject_key | text | `cat:<id\|null>` for a spike, `item:<id>` for a large item |
+| note | text | Nullable — "expected — tax payment" |
+
+Unique on (period_year, period_month, kind, subject_key).
+
+## Settlement Tables
+
+See [settlement.md](./settlement.md). Amounts are signed in the settlement's
+from → to direction.
+
+### settlements
+One act of settling up.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | integer (PK) | Auto-increment |
+| from_user_id | integer (FK -> users) | Who paid |
+| to_user_id | integer (FK -> users) | Who was paid |
+| amount_owed | real | Total owed at settle time: months + adjustments + carried difference |
+| note | text | Nullable |
+
+### settlement_payments
+The transfers that paid a settlement (one or more — e-transfers cap at $3,000).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | integer (PK) | Auto-increment |
+| settlement_id | integer (FK -> settlements) | Cascade delete |
+| amount | real | Positive, from → to |
+| paid_on | text | ISO 8601 date |
+
+### settlement_months
+What a settlement recorded per month.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | integer (PK) | Auto-increment |
+| settlement_id | integer (FK -> settlements) | Cascade delete |
+| period_year | integer | |
+| period_month | integer | 1-12 |
+| amount_owed | real | `is_adjustment` 0: the month's share from its snapshot at settle time. 1: the live − recorded difference this settlement included |
+| is_adjustment | integer | 0/1 |
+
+A month's recorded share is the sum of its rows. A month is **covered** by the
+settlement holding its `is_adjustment = 0` row — at most one (partial unique
+index); later settlements only add adjustment rows.

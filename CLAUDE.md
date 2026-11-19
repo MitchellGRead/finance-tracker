@@ -92,6 +92,17 @@ finance-tracker/
   decided"); provenance lives in `suggestion_status`/`suggestion_model`
 - See `.documentation/SOP/ai-suggestions.md`
 
+### Reports and settlement
+- A snapshot holds facts about **one month's items**; anything spanning months
+  (settlement status, outstanding, run rate, anomaly baselines) is derived at
+  view time, never stored in it
+- "Report outdated" is a **diff of numbers** against a live `computeReport`,
+  never `updated_at` vs `generatedAt` — bulk touches change timestamps only
+- Lifecycle stages and flags are derived (`services/monthStatus.ts`), never stored
+- Settlement amounts are recomputed server-side from month status; the client
+  only picks months and enters transfers
+- See `.documentation/SOP/report-generation.md` and `settlement.md`
+
 ### General
 - No authentication — users are named participants, not authenticated accounts
 - Single operator model — one person uses the system at a time
