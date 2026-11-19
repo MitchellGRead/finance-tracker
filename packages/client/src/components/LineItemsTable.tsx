@@ -34,6 +34,7 @@ import {
   type LiveSuggestion,
 } from "../lib/suggestions";
 import { chunkIds } from "../lib/chunk";
+import type { WorkspaceFilter } from "../lib/workspaceFilter";
 import {
   Table,
   TableBody,
@@ -48,6 +49,8 @@ interface LineItemsTableProps {
   year: number;
   /** Open the Rules dialog focused on this rule. */
   onOpenRule: (ruleId: number) => void;
+  /** Filters requested from the Reports page (checklist, anomalies). */
+  filterRequest?: WorkspaceFilter | null;
 }
 
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
@@ -66,7 +69,7 @@ const SUGGESTION_FILTER_LABELS: Record<SuggestionFilter, string> = {
   none: "No suggestion",
 };
 
-export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps) {
+export function LineItemsTable({ month, year, onOpenRule, filterRequest = null }: LineItemsTableProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -76,6 +79,26 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
   const [noteValue, setNoteValue] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [suggestionFilter, setSuggestionFilter] = useState<SuggestionFilter>("all");
+  // Scoped to the month it was requested for; moving month drops it.
+  const [idFilterState, setIdFilter] = useState<{ ids: Set<number>; label: string; period: string } | null>(null);
+  const idFilter = idFilterState?.period === `${year}-${month}` ? idFilterState : null;
+
+  useEffect(() => {
+    if (!filterRequest) return;
+    setStatusFilter(filterRequest.status ?? "all");
+    setCategoryFilter(filterRequest.category ?? "all");
+    setUserFilter("all");
+    setSuggestionFilter("all");
+    setIdFilter(
+      filterRequest.itemIds
+        ? {
+            ids: new Set(filterRequest.itemIds),
+            label: filterRequest.label ?? `${filterRequest.itemIds.length} items`,
+            period: `${year}-${month}`,
+          }
+        : null
+    );
+  }, [filterRequest?.nonce]);
   const [suggestingIds, setSuggestingIds] = useState<Set<number>>(new Set());
   const [suggestProgress, setSuggestProgress] = useState<{
     done: number;
@@ -211,8 +234,10 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
     statusFilter !== "all" ||
     userFilter !== "all" ||
     categoryFilter !== "all" ||
-    suggestionFilter !== "all";
+    suggestionFilter !== "all" ||
+    idFilter !== null;
   const clearFilters = () => {
+    setIdFilter(null);
     setStatusFilter("all");
     setUserFilter("all");
     setCategoryFilter("all");
@@ -228,6 +253,7 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
   }): LiveSuggestion => getLiveSuggestion(item, categoryList, ruleFor(item));
 
   const filteredItems = items.filter((item) => {
+    if (idFilter && !idFilter.ids.has(item.id)) return false;
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
     if (userFilter !== "all" && getUserName(item.userId) !== userFilter)
       return false;
@@ -518,6 +544,20 @@ export function LineItemsTable({ month, year, onOpenRule }: LineItemsTableProps)
               <SelectItem value="none">No suggestion</SelectItem>
             </SelectContent>
           </Select>
+        )}
+
+        {idFilter && (
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-muted/50 px-2 text-sm">
+            Showing {idFilter.label}
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Show all items"
+              onClick={() => setIdFilter(null)}
+            >
+              ×
+            </button>
+          </span>
         )}
 
         {filtersActive && (

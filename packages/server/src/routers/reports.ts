@@ -3,7 +3,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
 import { reportSnapshots, lineItems, categories, users } from "../db/schema";
-import { generateReportData, loadSnapshots } from "../services/reportGenerator";
+import { loadSnapshots, saveSnapshot } from "../services/reportGenerator";
 import { buildReportTrend } from "../services/reportTrend";
 import { computeRunRate } from "../services/runRate";
 import { detectAnomalies } from "../services/anomalies";
@@ -15,41 +15,27 @@ const periodInput = z.object({
   year: z.number(),
 });
 
+function loadMonthStatuses() {
+  return computeMonthStatuses({
+    items: db.select().from(lineItems).all(),
+    users: db.select().from(users).all(),
+    categories: db.select().from(categories).all(),
+    snapshots: loadSnapshots(),
+    settlements: [],
+  });
+}
+
 export const reportsRouter = router({
-  generate: publicProcedure
-    .input(
-      z.object({
-        month: z.number().min(1).max(12),
-        year: z.number(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const data = generateReportData(input.month, input.year);
+  generate: publicProcedure.input(periodInput).mutation(async ({ input }) => {
+    return saveSnapshot(input.month, input.year);
+  }),
 
-      // Delete existing snapshot for this period (upsert)
-      db.delete(reportSnapshots)
-        .where(
-          and(
-            eq(reportSnapshots.periodMonth, input.month),
-            eq(reportSnapshots.periodYear, input.year)
-          )
-        )
-        .run();
-
-      // Insert new snapshot
-      const snapshot = db
-        .insert(reportSnapshots)
-        .values({
-          periodMonth: input.month,
-          periodYear: input.year,
-          generatedAt: data.generatedAt,
-          data: JSON.stringify(data),
-        })
-        .returning()
-        .get();
-
-      return { ...snapshot, parsed: data };
-    }),
+  /** Regenerate every month whose snapshot no longer matches live data. */
+  regenerateOutdated: publicProcedure.mutation(async () => {
+    const outdated = loadMonthStatuses().months.filter((m) => m.flags.outdated);
+    for (const m of outdated) saveSnapshot(m.month, m.year);
+    return { regenerated: outdated.map((m) => m.key) };
+  }),
 
   get: publicProcedure
     .input(
@@ -104,15 +90,7 @@ export const reportsRouter = router({
    * pending, unreviewed), plus the outstanding balance. One call for all
    * months; a full live recompute is cheap at household scale.
    */
-  status: publicProcedure.query(async () => {
-    return computeMonthStatuses({
-      items: db.select().from(lineItems).all(),
-      users: db.select().from(users).all(),
-      categories: db.select().from(categories).all(),
-      snapshots: loadSnapshots(),
-      settlements: [],
-    });
-  }),
+  status: publicProcedure.query(async () => loadMonthStatuses()),
 
   /** "Unusual this month": category spikes and large one-off items. */
   anomalies: publicProcedure.input(periodInput).query(async ({ input }) => {

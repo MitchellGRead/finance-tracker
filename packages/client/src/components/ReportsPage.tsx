@@ -18,6 +18,8 @@ import {
 } from "./ui/table";
 import { Badge } from "./ui/badge";
 import { SpendingTrend } from "./SpendingTrend";
+import { MonthChecklist } from "./MonthChecklist";
+import type { WorkspaceFilterRequest } from "../lib/workspaceFilter";
 import type { ReportSnapshot } from "@finance-tracker/shared";
 
 const formatCurrency = (amount: number) =>
@@ -36,9 +38,10 @@ interface ReportsPageProps {
   month: number;
   year: number;
   onSelectMonth: (month: number, year: number) => void;
+  onOpenWorkspace: (filter: WorkspaceFilterRequest) => void;
 }
 
-export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
+export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: ReportsPageProps) {
   const trpc = useTRPC();
 
   const reportsListQuery = useQuery(trpc.reports.list.queryOptions());
@@ -112,10 +115,11 @@ export function ReportsPage({ month, year, onSelectMonth }: ReportsPageProps) {
 
   return (
     <div className="space-y-6">
+      <MonthChecklist month={month} year={year} onOpenWorkspace={onOpenWorkspace} />
+
       {!snapshot && !reportQuery.isLoading && (
-        <div className="flex h-32 items-center justify-center text-muted-foreground">
-          No report generated for {formatMonth(month, year)}. Go to the
-          Workspace and click "Generate Report".
+        <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+          No report generated for {formatMonth(month, year)} yet.
         </div>
       )}
 

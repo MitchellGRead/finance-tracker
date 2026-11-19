@@ -44,6 +44,7 @@ import { LineItemsTable } from "./components/LineItemsTable";
 import { AddLineItem } from "./components/AddLineItem";
 import { AddRent } from "./components/AddRent";
 import { ReportsPage } from "./components/ReportsPage";
+import type { WorkspaceFilter, WorkspaceFilterRequest } from "./lib/workspaceFilter";
 
 type Page = "workspace" | "reports";
 
@@ -55,6 +56,12 @@ export function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [focusRuleId, setFocusRuleId] = useState<number | null>(null);
+  const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter | null>(null);
+
+  const openWorkspace = (filter: WorkspaceFilterRequest) => {
+    setWorkspaceFilter({ ...filter, nonce: Date.now() });
+    setPage("workspace");
+  };
 
   const openRule = (ruleId: number) => {
     setFocusRuleId(ruleId);
@@ -318,12 +325,22 @@ export function App() {
       {page === "workspace" ? (
         <div className="flex-1 min-h-0 px-6 py-4">
           <main className="flex h-full min-w-0 flex-col">
-            <LineItemsTable month={month} year={year} onOpenRule={openRule} />
+            <LineItemsTable
+              month={month}
+              year={year}
+              onOpenRule={openRule}
+              filterRequest={workspaceFilter}
+            />
           </main>
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-          <ReportsPage month={month} year={year} onSelectMonth={setMonthAndYear} />
+          <ReportsPage
+            month={month}
+            year={year}
+            onSelectMonth={setMonthAndYear}
+            onOpenWorkspace={openWorkspace}
+          />
         </div>
       )}
     </div>
