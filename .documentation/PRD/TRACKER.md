@@ -6,15 +6,10 @@ item off when its PR merges and add the PR number.
 Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 All 15 items are implemented on `feat/household-reports-rules` (one commit
-each; R-2/R-3 share one). Before merging: generate and apply the migration
-for `anomaly_dismissals` and the three settlement tables
-(`pnpm db:generate` → back up → `pnpm db:migrate`). Deviations from the PRDs
-are noted in the commit messages and SOPs — chiefly the tuned anomaly
+each; R-2/R-3 share one), with migration `0006_premium_loa` for
+`anomaly_dismissals` and the three settlement tables. Deviations from the
+PRDs are noted in the commit messages and SOPs — chiefly the tuned anomaly
 thresholds (report-generation.md#anomalies).
-
-Design reference: concept canvas (private) —
-https://claude.ai/artifact/NZ5wtxWpgxMwyLyRzHTBMd (Concept A + settle dialog
-are the chosen direction).
 
 ## 1. Rules impact view — [rules-impact-view.md](./rules-impact-view.md)
 
