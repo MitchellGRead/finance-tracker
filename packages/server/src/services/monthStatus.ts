@@ -68,8 +68,13 @@ export interface MonthStatus {
   uncategorizedCount: number;
   reviewed: boolean;
   report: { generatedAt: string; current: boolean; diff: ReportDiff | null } | null;
-  /** Canonical signed share owed for the month, live and as snapshotted. */
-  share: { live: number; snapshot: number | null };
+  /**
+   * Canonical signed share owed for the month, live and as snapshotted, and
+   * — for an open month — what is still due: live minus anything already
+   * recorded for it (adjustment rows left behind when the settlement that
+   * covered it was undone).
+   */
+  share: { live: number; snapshot: number | null; due: number };
   settlement: {
     settlementId: number;
     /** Latest transfer date. */
@@ -293,7 +298,11 @@ export function computeMonthStatuses(input: {
       uncategorizedCount,
       reviewed,
       report,
-      share: { live: liveShare, snapshot: snapshot ? shareOf(snapshot, pair) : null },
+      share: {
+        live: liveShare,
+        snapshot: snapshot ? shareOf(snapshot, pair) : null,
+        due: settlement ? 0 : round(liveShare - recorded),
+      },
       settlement,
       stage,
       flags: {
@@ -305,7 +314,7 @@ export function computeMonthStatuses(input: {
   });
 
   const open = months.filter((m) => !m.settlement && m.itemCount > 0);
-  const unsettledShares = round(open.reduce((s, m) => s + m.share.live, 0));
+  const unsettledShares = round(open.reduce((s, m) => s + m.share.due, 0));
   const pendingAdjustments = round(
     months.reduce((s, m) => s + (m.flags.adjustmentPending ? m.settlement!.pendingAdjustment : 0), 0)
   );

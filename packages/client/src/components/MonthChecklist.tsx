@@ -225,7 +225,7 @@ export function MonthChecklist({ month, year, onOpenWorkspace, onSettle, onShowA
               </>
             ) : itemCount > 0 ? (
               <>
-                Open · {describeOwed(m!.share.live, pair)} this month
+                Open · {describeOwed(m!.share.due, pair)} this month
                 {data.outstanding.openMonths.length > 1 && (
                   <span className="block">
                     Part of {formatCurrency(Math.abs(data.outstanding.total))} outstanding (

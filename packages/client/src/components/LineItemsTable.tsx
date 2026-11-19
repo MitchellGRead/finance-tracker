@@ -51,6 +51,8 @@ interface LineItemsTableProps {
   onOpenRule: (ruleId: number) => void;
   /** Filters requested from the Reports page (checklist, anomalies). */
   filterRequest?: WorkspaceFilter | null;
+  /** Called once a request is applied, so it is not re-applied on remount. */
+  onFilterApplied?: () => void;
 }
 
 type StatusFilter = "all" | "pending" | "accepted" | "rejected";
@@ -69,7 +71,13 @@ const SUGGESTION_FILTER_LABELS: Record<SuggestionFilter, string> = {
   none: "No suggestion",
 };
 
-export function LineItemsTable({ month, year, onOpenRule, filterRequest = null }: LineItemsTableProps) {
+export function LineItemsTable({
+  month,
+  year,
+  onOpenRule,
+  filterRequest = null,
+  onFilterApplied,
+}: LineItemsTableProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -98,6 +106,7 @@ export function LineItemsTable({ month, year, onOpenRule, filterRequest = null }
           }
         : null
     );
+    onFilterApplied?.();
   }, [filterRequest?.nonce]);
   const [suggestingIds, setSuggestingIds] = useState<Set<number>>(new Set());
   const [suggestProgress, setSuggestProgress] = useState<{

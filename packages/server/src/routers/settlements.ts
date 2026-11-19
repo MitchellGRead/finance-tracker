@@ -52,7 +52,8 @@ export const settlementsRouter = router({
     .input(
       z.object({
         months: monthsInput,
-        payments: z.array(z.object({ amount: z.number().positive(), paidOn: isoDate })).min(1),
+        // Empty only when nothing is owed (e.g. months of personal spending).
+        payments: z.array(z.object({ amount: z.number().positive(), paidOn: isoDate })),
         note: z.string().trim().max(500).nullable().optional(),
       })
     )
@@ -66,6 +67,9 @@ export const settlementsRouter = router({
       }
       if (plan.months.length === 0 && plan.adjustments.length === 0 && Math.abs(plan.carried) < 0.005) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Nothing to settle" });
+      }
+      if (input.payments.length === 0 && plan.amountOwed >= 0.005) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Enter at least one transfer" });
       }
       const id = saveSettlement(plan, input.payments, input.note || null);
       return { id, plan };

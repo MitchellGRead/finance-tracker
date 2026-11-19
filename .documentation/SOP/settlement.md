@@ -25,14 +25,17 @@ derived. Two-person household assumed; N > 2 is out of scope.
    - every **pending adjustment** on already-settled months
    - the **carried** difference from earlier settlements
    - the total and its direction (who owes whom)
-3. Enter transfers (1+). They may total more or less than owed — the
+3. Enter transfers (1+; none when nothing is owed, e.g. months of only
+   personal spending). They may total more or less than owed — the
    difference carries forward.
 4. `settlements.create` recomputes the plan server-side (the client never
    sends amounts owed) and saves it in one transaction.
 
 **Undo** (`settlements.delete`) removes the settlement, its transfers and its
 month rows; those months are open again and any adjustments it included are
-pending again.
+pending again. Undoing a settlement that a *later* one adjusted leaves the
+later adjustment rows in place; they count as already paid, so the reopened
+month owes only `live − recorded` (its **due** share), not its full share.
 
 ## Signs
 
@@ -50,7 +53,7 @@ month; the recorded share then equals live again and the flag clears.
 ## Outstanding balance
 
 ```
-outstanding = Σ live shares of open months
+outstanding = Σ due shares of open months      (live − anything already recorded for it)
             + Σ pending adjustments
             + (Σ all settlement_months.amount_owed − Σ all payments)   ← carried
 ```

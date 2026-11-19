@@ -58,8 +58,10 @@ export function planSettlement(status: MonthStatusReport, monthKeys: string[]): 
     else if (m.settlement) problems.push({ key, problem: "already_settled" });
     else if (!m.report) problems.push({ key, problem: "no_report" });
     else if (!m.report.current) problems.push({ key, problem: "report_outdated" });
-    // Current report, so the snapshot share equals the live one.
-    else months.push({ key, year: m.year, month: m.month, share: m.share.snapshot ?? m.share.live });
+    // Current report, so the snapshot share equals the live one; record
+    // only what is still due (an undone settlement may have left adjustment
+    // rows for this month that were already paid).
+    else months.push({ key, year: m.year, month: m.month, share: m.share.due });
   }
 
   const adjustments = status.months

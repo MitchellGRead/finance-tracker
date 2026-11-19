@@ -90,6 +90,48 @@ describe("planSettlement", () => {
     expect(plan).toMatchObject({ total: -124, amountOwed: 124, fromUserId: JADYN.id });
   });
 
+  it("undoing a settlement that a later one adjusted does not double-count what was paid", () => {
+    const april = itemsFor([4]);
+    const raised = april.map((i) => ({ ...i, amount: 220 })); // share −100 → −110
+    // S1 covered April at −100; S2 later paid the −10 adjustment. S1 is undone.
+    const s2: SettlementRecord = {
+      id: 2,
+      fromUserId: JADYN.id,
+      toUserId: MITCHELL.id,
+      amountOwed: 10,
+      note: null,
+      createdAt: "2026-06-01",
+      months: [{ year: 2026, month: 4, amountOwed: 10, isAdjustment: true }],
+      payments: [{ id: 2, amount: 10, paidOn: "2026-06-01" }],
+    };
+    const s = computeMonthStatuses({
+      items: raised,
+      users: USERS,
+      categories: [GROCERIES],
+      snapshots: [snap(raised, 4)],
+      settlements: [s2],
+    });
+    expect(s.outstanding.total).toBe(-100);
+    const plan = planSettlement(s, ["2026-04"]);
+    expect(plan.months[0].share).toBe(-100);
+
+    // Re-settling April at −100 leaves nothing pending.
+    const s3: SettlementRecord = { ...s2, id: 3, amountOwed: 100,
+      months: [{ year: 2026, month: 4, amountOwed: 100, isAdjustment: false }],
+      payments: [{ id: 3, amount: 100, paidOn: "2026-06-02" }] };
+    const after = computeMonthStatuses({
+      items: raised, users: USERS, categories: [GROCERIES], snapshots: [snap(raised, 4)], settlements: [s2, s3],
+    });
+    expect(after.months[0].flags.adjustmentPending).toBe(false);
+    expect(after.outstanding.total).toBe(0);
+  });
+
+  it("settles a zero-share month with no transfers", () => {
+    const personal = itemsFor([4]).map((i) => ({ ...i, splitRatio: 1 }));
+    const plan = planSettlement(status(personal, [4]), ["2026-04"]);
+    expect(plan).toMatchObject({ problems: [], amountOwed: 0 });
+  });
+
   it("flips direction when the other person owes overall", () => {
     const items = itemsFor([4]).map((i) => ({ ...i, userId: JADYN.id }));
     const plan = planSettlement(status(items, [4]), ["2026-04"]);

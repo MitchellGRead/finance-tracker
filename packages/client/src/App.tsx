@@ -330,6 +330,7 @@ export function App() {
               year={year}
               onOpenRule={openRule}
               filterRequest={workspaceFilter}
+              onFilterApplied={() => setWorkspaceFilter(null)}
             />
           </main>
         </div>

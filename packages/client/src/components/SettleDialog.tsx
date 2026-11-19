@@ -95,11 +95,13 @@ export function SettleDialog({ open, onOpenChange, month, year }: SettleDialogPr
   });
   const plan = planQuery.data;
 
-  // Until the operator edits transfers, propose paying the total in one go.
+  // Until the operator edits transfers, propose paying the total in one go
+  // (no transfer at all when nothing is owed). Re-runs on reopen, when the
+  // cached plan's amount has not changed.
   useEffect(() => {
-    if (!plan || transfersTouched) return;
-    setTransfers([{ amount: plan.amountOwed > 0 ? plan.amountOwed.toFixed(2) : "", paidOn: today() }]);
-  }, [plan?.amountOwed, transfersTouched]);
+    if (!open || !plan || transfersTouched) return;
+    setTransfers(plan.amountOwed > 0 ? [{ amount: plan.amountOwed.toFixed(2), paidOn: today() }] : []);
+  }, [open, plan?.amountOwed, transfersTouched]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: trpc.reports.pathKey() });
@@ -139,8 +141,10 @@ export function SettleDialog({ open, onOpenChange, month, year }: SettleDialogPr
   };
 
   const parsed = transfers.map((t) => ({ amount: Number(t.amount), paidOn: t.paidOn }));
+  const owesNothing = plan !== undefined && plan.amountOwed < 0.005;
   const transfersValid =
-    parsed.length > 0 && parsed.every((t) => Number.isFinite(t.amount) && t.amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(t.paidOn));
+    (parsed.length > 0 || owesNothing) &&
+    parsed.every((t) => Number.isFinite(t.amount) && t.amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(t.paidOn));
   const paid = toCents(parsed.reduce((s, t) => s + (Number.isFinite(t.amount) ? t.amount : 0), 0));
   const difference = plan ? toCents(paid - plan.amountOwed) : 0;
   const fixable = plan?.problems.filter((p) => p.problem === "no_report" || p.problem === "report_outdated") ?? [];
@@ -159,7 +163,7 @@ export function SettleDialog({ open, onOpenChange, month, year }: SettleDialogPr
       return next;
     });
 
-  const liveShare = (key: string) => status?.months.find((m) => m.key === key)?.share.live ?? 0;
+  const dueShare = (key: string) => status?.months.find((m) => m.key === key)?.share.due ?? 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -200,7 +204,7 @@ export function SettleDialog({ open, onOpenChange, month, year }: SettleDialogPr
                             </span>
                           )}
                           <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                            {describeOwed(liveShare(key), pair)}
+                            {describeOwed(dueShare(key), pair)}
                           </span>
                         </label>
                       </li>
@@ -308,7 +312,7 @@ export function SettleDialog({ open, onOpenChange, month, year }: SettleDialogPr
                     size="sm"
                     className="h-8 w-8 p-0"
                     aria-label={`Remove transfer ${i + 1}`}
-                    disabled={transfers.length === 1}
+                    disabled={transfers.length === 1 && !owesNothing}
                     onClick={() => editTransfers(transfers.filter((_, j) => j !== i))}
                   >
                     <X className="h-4 w-4" />
@@ -323,7 +327,12 @@ export function SettleDialog({ open, onOpenChange, month, year }: SettleDialogPr
               >
                 + Add transfer
               </Button>
-              {plan && transfersValid && (
+              {owesNothing && transfers.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Nothing is owed — recording marks these months settled with no transfer.
+                </p>
+              )}
+              {plan && transfersValid && transfers.length > 0 && (
                 <p className="text-xs text-muted-foreground">
                   {transfers.length} transfer{transfers.length === 1 ? "" : "s"} totalling {formatCurrency(paid)}
                   {Math.abs(difference) < 0.005
