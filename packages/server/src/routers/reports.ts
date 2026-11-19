@@ -2,10 +2,11 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { reportSnapshots } from "../db/schema";
+import { reportSnapshots, lineItems, categories } from "../db/schema";
 import { generateReportData, loadSnapshots } from "../services/reportGenerator";
 import { buildReportTrend } from "../services/reportTrend";
 import { computeRunRate } from "../services/runRate";
+import { detectAnomalies } from "../services/anomalies";
 import { monthKey } from "../lib/months";
 
 const periodInput = z.object({
@@ -95,6 +96,30 @@ export const reportsRouter = router({
   /** Trailing average monthly spend ending at the month, from snapshots. */
   runRate: publicProcedure.input(periodInput).query(async ({ input }) => {
     return computeRunRate(buildReportTrend(loadSnapshots()), monthKey(input.year, input.month));
+  }),
+
+  /** "Unusual this month": category spikes and large one-off items. */
+  anomalies: publicProcedure.input(periodInput).query(async ({ input }) => {
+    const allCategories = db.select({ id: categories.id, name: categories.name }).from(categories).all();
+    return detectAnomalies({
+      month: input.month,
+      year: input.year,
+      snapshots: loadSnapshots(),
+      items: db
+        .select({
+          id: lineItems.id,
+          date: lineItems.date,
+          description: lineItems.description,
+          amount: lineItems.amount,
+          isCredit: lineItems.isCredit,
+          status: lineItems.status,
+          categoryId: lineItems.categoryId,
+        })
+        .from(lineItems)
+        .all(),
+      categoryName: (id) =>
+        id === null ? "Uncategorized" : allCategories.find((c) => c.id === id)?.name ?? "Unknown",
+    });
   }),
 
   delete: publicProcedure
