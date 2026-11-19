@@ -21,6 +21,7 @@ import { SpendingTrend } from "./SpendingTrend";
 import { MonthChecklist } from "./MonthChecklist";
 import { AnomaliesCard } from "./AnomaliesCard";
 import { SettleDialog } from "./SettleDialog";
+import { SettlementDetailCard, SettlementSummaryCard } from "./SettlementCards";
 import type { WorkspaceFilterRequest } from "../lib/workspaceFilter";
 import type { ReportSnapshot } from "@finance-tracker/shared";
 
@@ -115,7 +116,6 @@ export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: Rep
     ])
   );
 
-  const settlement = snapshot?.splitSummary.settlements[0];
 
   return (
     <div className="space-y-6">
@@ -160,25 +160,7 @@ export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: Rep
 
             <RunRateCard month={month} year={year} />
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Settlement</CardDescription>
-                <CardTitle className="text-2xl">
-                  {settlement
-                    ? formatCurrency(settlement.amount)
-                    : "$0.00"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {settlement ? (
-                  <p className="text-sm text-muted-foreground">
-                    {settlement.fromUserName} owes {settlement.toUserName}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">All settled</p>
-                )}
-              </CardContent>
-            </Card>
+            <SettlementSummaryCard snapshot={snapshot} month={month} year={year} />
 
             <Card>
               <CardHeader className="pb-2">
@@ -406,28 +388,7 @@ export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: Rep
             })}
           </div>
 
-          {/* Settlement summary */}
-          {snapshot.splitSummary.settlements.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Settlement Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {snapshot.splitSummary.settlements.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <span className="font-medium">{s.fromUserName}</span>
-                    <span className="text-muted-foreground">owes</span>
-                    <span className="font-medium">{s.toUserName}</span>
-                    <span className="font-semibold text-lg ml-2">
-                      {formatCurrency(s.amount)}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          <SettlementDetailCard snapshot={snapshot} month={month} year={year} />
 
           {/* Trend comparison */}
           {priorSnapshots.length > 0 && (
