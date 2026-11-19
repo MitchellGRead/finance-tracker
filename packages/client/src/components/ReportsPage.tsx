@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { useTRPC } from "../lib/trpc";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import {
@@ -19,6 +19,7 @@ import {
 import { Badge } from "./ui/badge";
 import { SpendingTrend } from "./SpendingTrend";
 import { MonthChecklist } from "./MonthChecklist";
+import { AnomaliesCard } from "./AnomaliesCard";
 import type { WorkspaceFilterRequest } from "../lib/workspaceFilter";
 import type { ReportSnapshot } from "@finance-tracker/shared";
 
@@ -43,6 +44,7 @@ interface ReportsPageProps {
 
 export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: ReportsPageProps) {
   const trpc = useTRPC();
+  const anomaliesRef = useRef<HTMLDivElement>(null);
 
   const reportsListQuery = useQuery(trpc.reports.list.queryOptions());
   const reports = reportsListQuery.data ?? [];
@@ -115,7 +117,12 @@ export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: Rep
 
   return (
     <div className="space-y-6">
-      <MonthChecklist month={month} year={year} onOpenWorkspace={onOpenWorkspace} />
+      <MonthChecklist
+        month={month}
+        year={year}
+        onOpenWorkspace={onOpenWorkspace}
+        onShowAnomalies={() => anomaliesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+      />
 
       {!snapshot && !reportQuery.isLoading && (
         <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
@@ -208,6 +215,8 @@ export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: Rep
           </div>
         </>
       )}
+
+      <AnomaliesCard ref={anomaliesRef} month={month} year={year} onOpenWorkspace={onOpenWorkspace} />
 
       <SpendingTrend month={month} year={year} onSelectMonth={onSelectMonth} />
 

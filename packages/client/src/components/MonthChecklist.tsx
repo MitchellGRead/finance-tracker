@@ -84,7 +84,7 @@ export function MonthChecklist({ month, year, onOpenWorkspace, onSettle, onShowA
   const m = data.months.find((x) => x.key === key);
   const pair = data.pair;
   const outdatedMonths = data.months.filter((x) => x.flags.outdated);
-  const anomalyCount = anomaliesQuery.data?.length ?? 0;
+  const anomalyCount = anomaliesQuery.data?.filter((x) => !x.dismissal).length ?? 0;
 
   const itemCount = m?.itemCount ?? 0;
   const imported: StepState = itemCount > 0 ? "done" : "todo";
