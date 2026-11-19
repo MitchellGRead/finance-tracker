@@ -1,47 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { lineItems, users, categories } from "../db/schema";
 import { computeReport } from "./computeReport";
 import { computeMonthStatuses, diffReport, pairOf, type SettlementRecord } from "./monthStatus";
+import { category, lineItem, user, type LineItemRow } from "../test/builders";
 
-type LineItemRow = typeof lineItems.$inferSelect;
-type UserRow = typeof users.$inferSelect;
-type CategoryRow = typeof categories.$inferSelect;
-
-const TS = "2026-04-01T00:00:00.000Z";
-const MITCHELL: UserRow = { id: 1, name: "Mitchell", createdAt: TS, updatedAt: TS };
-const JADYN: UserRow = { id: 2, name: "Jadyn", createdAt: TS, updatedAt: TS };
+const MITCHELL = user(1, "Mitchell");
+const JADYN = user(2, "Jadyn");
 const USERS = [MITCHELL, JADYN];
-const GROCERIES: CategoryRow = { id: 2, name: "Groceries", defaultSplitRatio: null, createdAt: TS, updatedAt: TS };
-const DINE: CategoryRow = { id: 3, name: "Dine", defaultSplitRatio: null, createdAt: TS, updatedAt: TS };
+const GROCERIES = category(2, "Groceries");
+const DINE = category(3, "Dine");
 const CATEGORIES = [GROCERIES, DINE];
 
-let nextId = 1;
-const item = (o: Partial<LineItemRow> & Pick<LineItemRow, "date" | "amount">): LineItemRow => ({
-  id: nextId++,
-  statementId: null,
-  userId: MITCHELL.id,
-  description: "item",
-  categoryId: GROCERIES.id,
-  splitRatio: 0.5,
-  status: "accepted",
-  statusOverride: false,
-  categoryOverride: false,
-  splitRatioOverride: false,
-  note: null,
-  isManual: false,
-  isCredit: false,
-  fingerprint: null,
-  suggestedCategoryId: null,
-  suggestedCategoryConfidence: null,
-  suggestedSplitRatio: null,
-  suggestedSplitConfidence: null,
-  suggestionStatus: null,
-  suggestionModel: null,
-  suggestedAt: null,
-  createdAt: TS,
-  updatedAt: TS,
-  ...o,
-});
+const item = (o: Partial<LineItemRow> & Pick<LineItemRow, "date" | "amount">): LineItemRow =>
+  lineItem({ userId: MITCHELL.id, categoryId: GROCERIES.id, ...o });
 
 const snap = (items: LineItemRow[], month: number, year = 2026) =>
   computeReport(items, USERS, CATEGORIES, month, year);

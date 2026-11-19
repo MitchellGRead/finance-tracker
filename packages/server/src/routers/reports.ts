@@ -2,12 +2,12 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../db";
-import { reportSnapshots, lineItems, categories, users, anomalyDismissals } from "../db/schema";
+import { reportSnapshots, lineItems, categories, anomalyDismissals } from "../db/schema";
 import { loadSnapshots, saveSnapshot } from "../services/reportGenerator";
 import { buildReportTrend } from "../services/reportTrend";
 import { computeRunRate } from "../services/runRate";
 import { applyDismissals, detectAnomalies } from "../services/anomalies";
-import { computeMonthStatuses } from "../services/monthStatus";
+import { loadMonthStatuses } from "../services/loadMonthStatuses";
 import { monthKey } from "../lib/months";
 
 const periodInput = z.object({
@@ -19,16 +19,6 @@ const anomalySubject = periodInput.extend({
   kind: z.enum(["category_spike", "large_item"]),
   subjectKey: z.string().regex(/^(cat:(\d+|null)|item:\d+)$/),
 });
-
-function loadMonthStatuses() {
-  return computeMonthStatuses({
-    items: db.select().from(lineItems).all(),
-    users: db.select().from(users).all(),
-    categories: db.select().from(categories).all(),
-    snapshots: loadSnapshots(),
-    settlements: [],
-  });
-}
 
 export const reportsRouter = router({
   generate: publicProcedure.input(periodInput).mutation(async ({ input }) => {

@@ -132,3 +132,63 @@ export const anomalyDismissals = sqliteTable(
     uniqueIndex("anomaly_dismissals_subject_idx").on(t.periodYear, t.periodMonth, t.kind, t.subjectKey),
   ]
 );
+
+/**
+ * A recorded settlement between the two household members, covering one or
+ * more months (and any pending adjustments), paid by one or more transfers.
+ * Entered by hand — never linked to imported e-transfer line items. See
+ * .documentation/SOP/settlement.md.
+ */
+export const settlements = sqliteTable("settlements", {
+  id: int("id").primaryKey({ autoIncrement: true }),
+  fromUserId: int("from_user_id")
+    .notNull()
+    .references(() => users.id),
+  toUserId: int("to_user_id")
+    .notNull()
+    .references(() => users.id),
+  /** Total owed at settle time, from → to: months + adjustments + carried difference. */
+  amountOwed: real("amount_owed").notNull(),
+  note: text("note"),
+  ...timestamps,
+});
+
+export const settlementPayments = sqliteTable("settlement_payments", {
+  id: int("id").primaryKey({ autoIncrement: true }),
+  settlementId: int("settlement_id")
+    .notNull()
+    .references(() => settlements.id, { onDelete: "cascade" }),
+  /** From → to, positive. */
+  amount: real("amount").notNull(),
+  paidOn: text("paid_on").notNull(), // ISO date
+  ...timestamps,
+});
+
+/**
+ * One row per month a settlement covers (`is_adjustment` false: the month's
+ * share as recorded from its snapshot), plus one per later adjustment it
+ * included (`is_adjustment` true: the live-minus-recorded difference). A
+ * month's recorded share is the sum of its rows. Amounts are signed in the
+ * settlement's from → to direction.
+ */
+export const settlementMonths = sqliteTable(
+  "settlement_months",
+  {
+    id: int("id").primaryKey({ autoIncrement: true }),
+    settlementId: int("settlement_id")
+      .notNull()
+      .references(() => settlements.id, { onDelete: "cascade" }),
+    periodYear: int("period_year").notNull(),
+    periodMonth: int("period_month").notNull(),
+    amountOwed: real("amount_owed").notNull(),
+    isAdjustment: int("is_adjustment", { mode: "boolean" }).notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("settlement_months_settlement_period_idx").on(t.settlementId, t.periodYear, t.periodMonth),
+    // A month is covered by at most one settlement; later ones only adjust it.
+    uniqueIndex("settlement_months_covered_idx")
+      .on(t.periodYear, t.periodMonth)
+      .where(sql`${t.isAdjustment} = 0`),
+  ]
+);

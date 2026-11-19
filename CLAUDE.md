@@ -51,7 +51,7 @@ finance-tracker/
 
 ### API
 - All client-server communication goes through tRPC routers
-- Routers organized by domain: `lineItems`, `categories`, `reports`, `statements`, `users`, `rules`, `suggestions`
+- Routers organized by domain: `lineItems`, `categories`, `reports`, `statements`, `users`, `rules`, `suggestions`, `settlements`
 - Input validation via Zod schemas on tRPC procedures
 - `lineItems.update` blind-spreads its input into `.set()` — the Zod schema is
   the only thing keeping it safe. Never widen it to server-owned columns.
