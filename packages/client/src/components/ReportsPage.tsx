@@ -20,6 +20,7 @@ import { Badge } from "./ui/badge";
 import { SpendingTrend } from "./SpendingTrend";
 import { MonthChecklist } from "./MonthChecklist";
 import { AnomaliesCard } from "./AnomaliesCard";
+import { SettleDialog } from "./SettleDialog";
 import type { WorkspaceFilterRequest } from "../lib/workspaceFilter";
 import type { ReportSnapshot } from "@finance-tracker/shared";
 
@@ -45,6 +46,7 @@ interface ReportsPageProps {
 export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: ReportsPageProps) {
   const trpc = useTRPC();
   const anomaliesRef = useRef<HTMLDivElement>(null);
+  const [settleOpen, setSettleOpen] = useState(false);
 
   const reportsListQuery = useQuery(trpc.reports.list.queryOptions());
   const reports = reportsListQuery.data ?? [];
@@ -121,6 +123,7 @@ export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: Rep
         month={month}
         year={year}
         onOpenWorkspace={onOpenWorkspace}
+        onSettle={() => setSettleOpen(true)}
         onShowAnomalies={() => anomaliesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
       />
 
@@ -215,6 +218,8 @@ export function ReportsPage({ month, year, onSelectMonth, onOpenWorkspace }: Rep
           </div>
         </>
       )}
+
+      <SettleDialog open={settleOpen} onOpenChange={setSettleOpen} month={month} year={year} />
 
       <AnomaliesCard ref={anomaliesRef} month={month} year={year} onOpenWorkspace={onOpenWorkspace} />
 

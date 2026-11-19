@@ -11,9 +11,8 @@ import {
 } from "../services/settlements";
 import { monthKey } from "../lib/months";
 
-const monthsInput = z
-  .array(z.object({ month: z.number().int().min(1).max(12), year: z.number().int() }))
-  .min(1);
+// May be empty when only pending adjustments or a carried difference are settled.
+const monthsInput = z.array(z.object({ month: z.number().int().min(1).max(12), year: z.number().int() }));
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
 
@@ -64,6 +63,9 @@ export const settlementsRouter = router({
           code: "BAD_REQUEST",
           message: `Cannot settle: ${plan.problems.map((p) => `${p.key || "household"} ${p.problem.replace(/_/g, " ")}`).join(", ")}`,
         });
+      }
+      if (plan.months.length === 0 && plan.adjustments.length === 0 && Math.abs(plan.carried) < 0.005) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Nothing to settle" });
       }
       const id = saveSettlement(plan, input.payments, input.note || null);
       return { id, plan };
