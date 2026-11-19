@@ -105,7 +105,8 @@ Overrides never change the underlying rule — they only affect the individual l
 Rules are created implicitly through user actions:
 - When a user categorizes a line item that had no category, the system can prompt to create a category rule
 - When a user accepts/rejects a line item, the system can prompt to create an accept/reject rule
-- Rules can also be managed directly through a rule management panel
+- The Rules dialog edits and deletes rules; it cannot create them. Every rule
+  starts from a line item, so the operator always sees what it matches
 
 ### Saving a rule from a line item
 
@@ -127,10 +128,24 @@ both, and `acceptAndCreateRules` executes the same plan:
 ### Seeing which rule applies
 
 - A row's S/P/C badge opens the Rules dialog scrolled to that rule
-- Each rule in the dialog shows how many stored items it decides
-  (`rules.coverage`, all months and statuses). A rule that matches items but
-  decides none says "never applies"; "beaten by X ×N" names the more specific
-  rule that wins instead and jumps to it
+- The dialog lists rules by **impact**: how many stored items each decides
+  (`rules.coverage`, all months and statuses), highest first. Description
+  search stays — paste a description to see the rules that match it
+- **Needs attention** narrows to rules with a problem, each with a reason
+  chip (derived from coverage, never stored; a rule can carry several):
+
+  | Chip | Definition |
+  |---|---|
+  | No matches | Matches zero stored items. Not necessarily wrong (a yearly charge) |
+  | Overshadowed by X | Matches items but decides none — a more specific rule wins on every one. Names and links X. The rule does nothing |
+  | Conflict with X | Ties X (same type, same normalized length) for the win on some item; first-created wins silently |
+
+  A rule that loses only same-length ties is a conflict, not overshadowed.
+- **Delete** previews its consequence: "Deleting changes N items" — items
+  whose winning rule's outcome (action, category, split vs personal) would
+  differ without it. N is 0 for overshadowed and no-match rules. Stored items
+  are not rewritten by a delete; the change shows on the next import or
+  re-apply
 
 ## Relationship to AI Suggestions
 
