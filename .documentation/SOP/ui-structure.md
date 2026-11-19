@@ -77,8 +77,10 @@ View generated monthly snapshots and historical trends.
   Categories are ranked on household spend over the whole range, so a
   category keeps its colour in every view (`--series-1..7` in `app.css`,
   fixed order, CVD-validated)
-- Legend chips toggle lines and rescale the y-axis (turn Total off to read
-  the categories)
+- Legend chips isolate-then-add: with every line showing, clicking a chip
+  shows only that line; further clicks add or remove lines; removing the last
+  one or "Show all" restores everything. The y-axis rescales to the visible
+  lines; a line never changes colour; the selection carries across views
 - Hover shows every value for that month; click a month to open its report
 - Built from report snapshots (`reports.trend`), so it matches the reports
   below it. A month with no generated report is a gap, not zero — regenerate
